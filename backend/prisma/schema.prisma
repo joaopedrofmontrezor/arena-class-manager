@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  PROFESSOR
+}
+
+enum LessonType {
+  TURMA
+  PERSONAL
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(PROFESSOR)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lessonsAsProfessor Lesson[] @relation("ProfessorLessons")
+  lessonsAsAssistant Lesson[] @relation("AssistantLessons")
+}
+
+model Lesson {
+  id             String     @id @default(uuid())
+  date           DateTime
+  time           String
+  type           LessonType
+  professorId    String
+  assistantId    String
+  professorValue Decimal    @db.Decimal(10, 2)
+  assistantValue Decimal    @db.Decimal(10, 2)
+  observation    String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  professor User @relation("ProfessorLessons", fields: [professorId], references: [id])
+  assistant User @relation("AssistantLessons", fields: [assistantId], references: [id])
+
+  @@index([professorId])
+  @@index([assistantId])
+  @@index([date])
+}
