@@ -27,10 +27,10 @@ export function Login() {
   return (
     <div className="min-h-screen flex flex-col justify-center bg-teal px-6">
       <div className="max-w-sm w-full mx-auto">
-        <p className="font-display font-semibold text-3xl text-white mb-1">
+        <p className="font-display font-semibold text-3xl text-white mb-1 text-center">
           Arena Futevôlei
         </p>
-        <p className="text-white/70 text-sm mb-8">
+        <p className="text-white/70 text-sm mb-8 text-center">
           Controle de aulas e fechamentos
         </p>
 
