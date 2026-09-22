@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LessonType, Role } from "@prisma/client";
+import { LessonType } from "@prisma/client";
 import { getPeriodoAtual, Periodo } from "./period.util";
 
 @Injectable()
@@ -14,6 +14,7 @@ export class ClosingService {
       this.prisma.lesson.findMany({
         where: { professorId, date: { gte: start, lte: end } },
         orderBy: { date: "asc" },
+        include: { assistant: { select: { id: true, name: true } } },
       }),
       this.prisma.lesson.findMany({
         where: { assistantId: professorId, date: { gte: start, lte: end } },
@@ -53,17 +54,32 @@ export class ClosingService {
   async getResumoGeral(periodo?: Periodo) {
     const p = periodo ?? getPeriodoAtual();
 
-    const professores = await this.prisma.user.findMany({
-      where: { role: Role.PROFESSOR, active: true },
+    const [professoresAtivos, idsComAulaNoPeriodo] = await Promise.all([
+      this.prisma.user.findMany({ where: { role: "PROFESSOR", active: true } }),
+      this.prisma.lesson.findMany({
+        where: { date: { gte: p.start, lte: p.end } },
+        select: { professorId: true, assistantId: true },
+      }),
+    ]);
+
+    const idsRelevantes = new Set<string>(professoresAtivos.map((u) => u.id));
+    for (const l of idsComAulaNoPeriodo) {
+      idsRelevantes.add(l.professorId);
+      idsRelevantes.add(l.assistantId);
+    }
+
+    const professoresRelevantes = await this.prisma.user.findMany({
+      where: { id: { in: Array.from(idsRelevantes) } },
       orderBy: { name: "asc" },
     });
 
     const resumos = await Promise.all(
-      professores.map(async (professor) => {
+      professoresRelevantes.map(async (professor) => {
         const resumo = await this.getResumoProfessor(professor.id, p);
         return {
           professorId: professor.id,
           nome: professor.name,
+          ativo: professor.active,
           totalAulas: resumo.totalTurmas + resumo.totalPersonais,
           valorAulas: resumo.valorAulas,
           valorComoAuxiliar: resumo.valorComoAuxiliar,
@@ -72,6 +88,25 @@ export class ClosingService {
       }),
     );
 
-    return { periodo: p, professores: resumos };
+    const resumosComMovimento = resumos.filter(
+      (r) => r.totalAulas > 0 || r.valorComoAuxiliar > 0,
+    );
+
+    const totalGeralProfessor = resumosComMovimento.reduce(
+      (s, r) => s + r.valorAulas,
+      0,
+    );
+    const totalGeralAuxiliares = resumosComMovimento.reduce(
+      (s, r) => s + r.valorComoAuxiliar,
+      0,
+    );
+
+    return {
+      periodo: p,
+      professores: resumosComMovimento,
+      totalGeralProfessor,
+      totalGeralAuxiliares,
+      totalGeral: totalGeralProfessor + totalGeralAuxiliares,
+    };
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Query, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { ClosingService } from "./closing.service";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -17,8 +17,7 @@ export class ClosingController {
     @Query("start") start?: string,
     @Query("end") end?: string,
   ) {
-    const periodo =
-      start && end ? this.buildCustomPeriodo(start, end) : undefined;
+    const periodo = this.resolvePeriodo(start, end);
     return this.closingService.getResumoProfessor(user.userId, periodo);
   }
 
@@ -26,13 +25,29 @@ export class ClosingController {
   @UseGuards(RolesGuard)
   @Roles("OWNER")
   getGeneral(@Query("start") start?: string, @Query("end") end?: string) {
-    const periodo =
-      start && end ? this.buildCustomPeriodo(start, end) : undefined;
+    const periodo = this.resolvePeriodo(start, end);
     return this.closingService.getResumoGeral(periodo);
   }
 
-  private buildCustomPeriodo(start: string, end: string) {
-    const { label } = getPeriodoAtual(new Date(start));
-    return { start: new Date(start), end: new Date(end), label };
+  @Get("professor/:id")
+  @UseGuards(RolesGuard)
+  @Roles("OWNER")
+  getByProfessor(
+    @Param("id") id: string,
+    @Query("start") start?: string,
+    @Query("end") end?: string,
+  ) {
+    const periodo = this.resolvePeriodo(start, end);
+    return this.closingService.getResumoProfessor(id, periodo);
+  }
+
+  private resolvePeriodo(start?: string, end?: string) {
+    if (!start || !end) return undefined;
+    const canonico = getPeriodoAtual(new Date(start));
+    return {
+      start: new Date(start),
+      end: new Date(end),
+      label: canonico.label,
+    };
   }
 }

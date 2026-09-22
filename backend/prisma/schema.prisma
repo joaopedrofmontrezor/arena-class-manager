@@ -3,9 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") 
+  directUrl = env("DIRECT_URL")   
 }
 
 enum Role {
@@ -34,7 +34,7 @@ model User {
 
 model Lesson {
   id             String     @id @default(uuid())
-  date           DateTime
+  date           DateTime   @db.Date
   time           String
   type           LessonType
   professorId    String
