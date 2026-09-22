@@ -7,6 +7,7 @@ import { NewLesson } from "./pages/NewLesson";
 import { MyLessons } from "./pages/MyLessons";
 import { Closing } from "./pages/Closing";
 import { GeneralClosing } from "./pages/GeneralClosing";
+import { Professores } from "./pages/Professores";
 
 export default function App() {
   return (
@@ -52,6 +53,14 @@ export default function App() {
             element={
               <ProtectedRoute requireRole="OWNER">
                 <GeneralClosing />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/professores"
+            element={
+              <ProtectedRoute requireRole="OWNER">
+                <Professores />
               </ProtectedRoute>
             }
           />

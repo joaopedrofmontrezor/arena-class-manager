@@ -21,8 +21,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout(); // POST /auth/logout limpa o cookie httpOnly no servidor
     navigate("/login");
   }
 

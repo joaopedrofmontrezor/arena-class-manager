@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/client";
+import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
 import { Lesson } from "../types";
 
@@ -12,12 +13,13 @@ function formatBRL(value: string | number) {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
 
 export function MyLessons() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState("");
 
   function load() {
     setLoading(true);
@@ -31,8 +33,13 @@ export function MyLessons() {
 
   async function handleDelete(id: string) {
     if (!confirm("Excluir esta aula?")) return;
-    await api.delete(`/lessons/${id}`);
-    load();
+    setActionError("");
+    try {
+      await api.delete(`/lessons/${id}`);
+      load();
+    } catch (err) {
+      setActionError(getErrorMessage(err, "Não foi possível excluir a aula."));
+    }
   }
 
   async function handleEditValue(lesson: Lesson) {
@@ -40,8 +47,13 @@ export function MyLessons() {
     if (novoValor === null) return;
     const parsed = Number(novoValor.replace(",", "."));
     if (Number.isNaN(parsed)) return;
-    await api.patch(`/lessons/${lesson.id}`, { professorValue: parsed });
-    load();
+    setActionError("");
+    try {
+      await api.patch(`/lessons/${lesson.id}`, { professorValue: parsed });
+      load();
+    } catch (err) {
+      setActionError(getErrorMessage(err, "Não foi possível editar a aula."));
+    }
   }
 
   return (
@@ -54,6 +66,9 @@ export function MyLessons() {
       </div>
 
       {loading && <p className="text-ink-soft text-sm">Carregando...</p>}
+      {actionError && (
+        <p className="text-sm text-coral-dark mb-3">{actionError}</p>
+      )}
 
       {!loading && lessons.length === 0 && (
         <div className="bg-surface rounded-card p-6 text-center">

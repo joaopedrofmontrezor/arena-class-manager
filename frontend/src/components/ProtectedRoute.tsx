@@ -9,7 +9,15 @@ export function ProtectedRoute({
   children: React.ReactNode;
   requireRole?: Role;
 }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page">
+        <p className="text-ink-soft text-sm">Carregando...</p>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (requireRole && user?.role !== requireRole)

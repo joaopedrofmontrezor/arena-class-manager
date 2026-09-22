@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import api from "../api/client";
 import { Layout } from "../components/Layout";
 import { ResumoProfessor } from "../types";
@@ -9,8 +9,12 @@ function formatBRL(value: number) {
 }
 
 export function Dashboard() {
+  const location = useLocation();
   const [resumo, setResumo] = useState<ResumoProfessor | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showSavedToast, setShowSavedToast] = useState(
+    Boolean((location.state as { aulaSalva?: boolean } | null)?.aulaSalva),
+  );
 
   useEffect(() => {
     api
@@ -19,8 +23,22 @@ export function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!showSavedToast) return;
+    const timer = setTimeout(() => setShowSavedToast(false), 2500);
+
+    window.history.replaceState({}, "");
+    return () => clearTimeout(timer);
+  }, [showSavedToast]);
+
   return (
     <Layout>
+      {showSavedToast && (
+        <div className="bg-sea text-white text-sm font-medium rounded-lg px-4 py-2.5 mb-4 text-center">
+          Aula salva com sucesso!
+        </div>
+      )}
+
       <p className="text-sm text-ink-soft mb-1">Período atual</p>
       <p className="font-display font-semibold text-lg mb-6">
         {loading ? "..." : resumo?.periodo.label}

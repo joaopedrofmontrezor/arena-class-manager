@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getErrorMessage } from "../api/errors";
 
 export function Login() {
   const { login } = useAuth();
@@ -17,8 +18,8 @@ export function Login() {
     try {
       await login(email, password);
       navigate("/dashboard");
-    } catch {
-      setError("E-mail ou senha incorretos.");
+    } catch (err) {
+      setError(getErrorMessage(err, "E-mail ou senha incorretos."));
     } finally {
       setLoading(false);
     }
@@ -27,10 +28,10 @@ export function Login() {
   return (
     <div className="min-h-screen flex flex-col justify-center bg-teal px-6">
       <div className="max-w-sm w-full mx-auto">
-        <p className="font-display font-semibold text-3xl text-white mb-1 text-center">
+        <p className="font-display font-semibold text-3xl text-white mb-1">
           Arena Futevôlei
         </p>
-        <p className="text-white/70 text-sm mb-8 text-center">
+        <p className="text-white/70 text-sm mb-8">
           Controle de aulas e fechamentos
         </p>
 
@@ -49,6 +50,7 @@ export function Login() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full border border-black/10 rounded-lg px-3 py-2.5 text-ink focus:outline-none focus:ring-2 focus:ring-coral"
               placeholder="voce@arena.com"
+              autoComplete="username"
             />
           </div>
 
@@ -63,6 +65,7 @@ export function Login() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full border border-black/10 rounded-lg px-3 py-2.5 text-ink focus:outline-none focus:ring-2 focus:ring-coral"
               placeholder="••••••"
+              autoComplete="current-password"
             />
           </div>
 

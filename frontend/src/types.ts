@@ -4,8 +4,9 @@ export type LessonType = "TURMA" | "PERSONAL";
 export interface User {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   role: Role;
+  active?: boolean;
 }
 
 export interface Lesson {
@@ -41,6 +42,7 @@ export interface ResumoProfessor {
 export interface ResumoGeralItem {
   professorId: string;
   nome: string;
+  ativo: boolean;
   totalAulas: number;
   valorAulas: number;
   valorComoAuxiliar: number;
@@ -50,4 +52,7 @@ export interface ResumoGeralItem {
 export interface ResumoGeral {
   periodo: Periodo;
   professores: ResumoGeralItem[];
+  totalGeralProfessor: number;
+  totalGeralAuxiliares: number;
+  totalGeral: number;
 }

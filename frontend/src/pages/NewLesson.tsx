@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
+import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
 import { LessonType, User } from "../types";
 
@@ -23,7 +24,6 @@ export function NewLesson() {
   const [observation, setObservation] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [savedMsg, setSavedMsg] = useState("");
 
   useEffect(() => {
     api.get<User[]>("/users", { params: { role: "PROFESSOR" } }).then((res) => {
@@ -32,20 +32,17 @@ export function NewLesson() {
     });
   }, []);
 
-  function resetForKeepGoing() {
-    setDate(nowDate());
-    setTime(nowTime());
-    setType("TURMA");
-    setProfessorValue("");
-    setObservation("");
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
 
     if (type === "PERSONAL" && !professorValue) {
       setError("Informe o valor da aula particular.");
+      return;
+    }
+
+    if (!assistantId) {
+      setError("Selecione um auxiliar.");
       return;
     }
 
@@ -60,11 +57,10 @@ export function NewLesson() {
           type === "PERSONAL" ? Number(professorValue) : undefined,
         observation: observation || undefined,
       });
-      setSavedMsg("Aula salva!");
-      resetForKeepGoing();
-      setTimeout(() => setSavedMsg(""), 2000);
-    } catch {
-      setError("Não foi possível salvar a aula. Tente novamente.");
+
+      navigate("/dashboard", { state: { aulaSalva: true } });
+    } catch (err) {
+      setError(getErrorMessage(err, "Não foi possível salvar a aula."));
     } finally {
       setSaving(false);
     }
@@ -173,6 +169,9 @@ export function NewLesson() {
             required
             className="w-full border border-black/10 rounded-lg px-3 py-2.5 bg-surface"
           >
+            {professors.length === 0 && (
+              <option value="">Nenhum professor disponível</option>
+            )}
             {professors.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -195,7 +194,6 @@ export function NewLesson() {
         </div>
 
         {error && <p className="text-sm text-coral-dark">{error}</p>}
-        {savedMsg && <p className="text-sm text-sea font-medium">{savedMsg}</p>}
 
         <button
           type="submit"
