@@ -5,6 +5,7 @@ import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentUserData } from "./decorators/current-user.decorator";
 
 const COOKIE_NAME = 'token';
 const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; 
@@ -46,7 +47,7 @@ export class AuthController {
   
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
-  me(@CurrentUser() user) {
+  me(@CurrentUser() user: CurrentUserData) {
     return { id: user.userId, name: user.name, role: user.role };
   }
 }

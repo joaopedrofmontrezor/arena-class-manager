@@ -15,6 +15,7 @@ import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { getPeriodoAtual } from "../closing/period.util";
+import { CurrentUserData } from "../auth/decorators/current-user.decorator";
 
 @UseGuards(AuthGuard("jwt"))
 @Controller("lessons")
@@ -22,13 +23,16 @@ export class LessonsController {
   constructor(private lessonsService: LessonsService) {}
 
   @Post()
-  create(@CurrentUser() user, @Body() dto: CreateLessonDto) {
+  create(
+  @CurrentUser() user: CurrentUserData,
+  @Body() dto: CreateLessonDto,
+) {
     return this.lessonsService.create(user.userId, dto);
   }
 
   @Get()
   findMine(
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentUserData,
     @Query("start") start?: string,
     @Query("end") end?: string,
   ) {
@@ -45,7 +49,7 @@ export class LessonsController {
 
   @Patch(":id")
   update(
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentUserData  ,
     @Param("id") id: string,
     @Body() dto: UpdateLessonDto,
   ) {
@@ -53,7 +57,7 @@ export class LessonsController {
   }
 
   @Delete(":id")
-  remove(@CurrentUser() user, @Param("id") id: string) {
+  remove(@CurrentUser() user: CurrentUserData, @Param("id") id: string) {
     return this.lessonsService.remove(id, user.userId, user.role);
   }
 }
