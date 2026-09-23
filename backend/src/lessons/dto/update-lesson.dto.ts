@@ -5,15 +5,18 @@ import {
   IsOptional,
   IsString,
 } from "class-validator";
+
 import { LessonType } from "@prisma/client";
+import { IsTimeHHMM } from "../../common/validators/is-time.validator";
+import { IsDateOnly } from "../../common/validators/is-date-only.validator";
 
 export class UpdateLessonDto {
   @IsOptional()
-  @IsDateString()
+  @IsDateOnly()
   date?: string;
 
   @IsOptional()
-  @IsString()
+  @IsTimeHHMM()
   time?: string;
 
   @IsOptional()

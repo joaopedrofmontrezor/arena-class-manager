@@ -12,12 +12,12 @@ import { Throttle } from "@nestjs/throttler";
 import { Response } from "express";
 
 import { AuthService } from "./auth.service";
-import { LoginDto } from "./dto/login.dto";
-import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import {
-  CSRF_COOKIE_NAME,
-  generateCsrfToken,
-} from "./csrf";
+  CurrentUser,
+  CurrentUserData,
+} from "./decorators/current-user.decorator";
+import { LoginDto } from "./dto/login.dto";
+import { CSRF_COOKIE_NAME, generateCsrfToken } from "./csrf";
 
 const COOKIE_NAME = "token";
 
@@ -66,11 +66,7 @@ export class AuthController {
 
     res.cookie(COOKIE_NAME, accessToken, cookieOptions());
 
-    res.cookie(
-      CSRF_COOKIE_NAME,
-      csrfToken,
-      csrfCookieOptions(),
-    );
+    res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
 
     return { user };
   }
@@ -93,38 +89,17 @@ export class AuthController {
 
   @Get("csrf")
   @UseGuards(AuthGuard("jwt"))
-  getCsrfToken(
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  getCsrfToken(@Res({ passthrough: true }) res: Response) {
     const csrfToken = generateCsrfToken();
 
-    res.cookie(
-      CSRF_COOKIE_NAME,
-      csrfToken,
-      csrfCookieOptions(),
-    );
+    res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
 
     return { ok: true };
   }
 
   @Get("me")
   @UseGuards(AuthGuard("jwt"))
-  me(
-    @CurrentUser() user,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const csrfToken = generateCsrfToken();
-
-    res.cookie(
-      CSRF_COOKIE_NAME,
-      csrfToken,
-      csrfCookieOptions(),
-    );
-
-    return {
-      id: user.userId,
-      name: user.name,
-      role: user.role,
-    };
+  me(@CurrentUser() user: CurrentUserData) {
+    return { id: user.userId, name: user.name, role: user.role };
   }
 }

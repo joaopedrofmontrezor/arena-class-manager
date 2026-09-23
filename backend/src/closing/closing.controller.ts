@@ -5,6 +5,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { getPeriodoAtual } from "./period.util";
+import { CurrentUserData } from "../auth/decorators/current-user.decorator";
 
 @UseGuards(AuthGuard("jwt"))
 @Controller("closing")
@@ -13,7 +14,7 @@ export class ClosingController {
 
   @Get("me")
   getMine(
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentUserData,
     @Query("start") start?: string,
     @Query("end") end?: string,
   ) {
