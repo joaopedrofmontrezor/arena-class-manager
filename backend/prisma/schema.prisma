@@ -48,7 +48,8 @@ model Lesson {
   professor User @relation("ProfessorLessons", fields: [professorId], references: [id])
   assistant User @relation("AssistantLessons", fields: [assistantId], references: [id])
 
-  @@index([professorId])
-  @@index([assistantId])
+  
+  @@index([professorId, date])
+  @@index([assistantId, date])
   @@index([date])
 }
