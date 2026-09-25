@@ -20,7 +20,7 @@ export function Professores() {
   function load() {
     setLoading(true);
     api
-      .get<User[]>("/users", { params: { role: "PROFESSOR", all: "true" } })
+      .get<User[]>('/users/all', { params: { role: 'PROFESSOR' } })
       .then((res) => setProfessores(res.data))
       .finally(() => setLoading(false));
   }
