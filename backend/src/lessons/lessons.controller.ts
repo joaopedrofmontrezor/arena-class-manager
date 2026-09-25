@@ -13,9 +13,12 @@ import { AuthGuard } from "@nestjs/passport";
 import { LessonsService } from "./lessons.service";
 import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
-import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import {
+  CurrentUser,
+  CurrentUserData,
+} from "../auth/decorators/current-user.decorator";
 import { getPeriodoAtual } from "../closing/period.util";
-import { CurrentUserData } from "../auth/decorators/current-user.decorator";
+import { PeriodoQueryDto } from "../common/dto/periodo-query.dto";
 
 @UseGuards(AuthGuard("jwt"))
 @Controller("lessons")
@@ -23,22 +26,18 @@ export class LessonsController {
   constructor(private lessonsService: LessonsService) {}
 
   @Post()
-  create(
-  @CurrentUser() user: CurrentUserData,
-  @Body() dto: CreateLessonDto,
-) {
+  create(@CurrentUser() user: CurrentUserData, @Body() dto: CreateLessonDto) {
     return this.lessonsService.create(user.userId, dto);
   }
 
   @Get()
   findMine(
     @CurrentUser() user: CurrentUserData,
-    @Query("start") start?: string,
-    @Query("end") end?: string,
+    @Query() query: PeriodoQueryDto,
   ) {
     const periodo =
-      start && end
-        ? { start: new Date(start), end: new Date(end) }
+      query.start && query.end
+        ? { start: new Date(query.start), end: new Date(query.end) }
         : getPeriodoAtual();
     return this.lessonsService.findMineByPeriod(
       user.userId,
@@ -49,7 +48,7 @@ export class LessonsController {
 
   @Patch(":id")
   update(
-    @CurrentUser() user: CurrentUserData  ,
+    @CurrentUser() user: CurrentUserData,
     @Param("id") id: string,
     @Body() dto: UpdateLessonDto,
   ) {
