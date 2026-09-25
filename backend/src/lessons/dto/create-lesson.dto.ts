@@ -2,13 +2,16 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
+  Max,
   ValidateIf,
 } from "class-validator";
 import { IsDateOnly } from "../../common/validators/is-date-only.validator";
 
 import { LessonType } from "@prisma/client";
 import { IsTimeHHMM } from "../../common/validators/is-time.validator";
+import { VALOR_PERSONAL_MAXIMO } from "../lessons.constants";
 
 export class CreateLessonDto {
   @IsDateOnly()
@@ -26,7 +29,9 @@ export class CreateLessonDto {
   assistantId!: string;
 
   @ValidateIf((dto: CreateLessonDto) => dto.type === LessonType.PERSONAL)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  @Max(VALOR_PERSONAL_MAXIMO)
   professorValue?: number;
 
   @IsOptional()
