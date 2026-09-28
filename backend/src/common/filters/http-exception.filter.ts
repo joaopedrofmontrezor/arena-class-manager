@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
@@ -20,6 +21,7 @@ interface JsonErrorBody {
   error?: string;
   timestamp: string;
   path: string;
+  requestId?: string;
 }
 
 function mapPrismaError(
@@ -52,6 +54,8 @@ function mapPrismaError(
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -60,7 +64,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const body = this.buildBody(exception, request);
 
     if (body.statusCode === HttpStatus.INTERNAL_SERVER_ERROR) {
-      console.error(exception);
+      const stack = exception instanceof Error ? exception.stack : undefined;
+      this.logger.error(
+        `[${body.requestId ?? "sem-request-id"}] ${String(exception)}`,
+        stack,
+      );
     }
 
     response.status(body.statusCode).json(body);
@@ -69,6 +77,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private buildBody(exception: unknown, request: Request): JsonErrorBody {
     const timestamp = new Date().toISOString();
     const path = request.url;
+
+    const requestId = typeof request.id === "string" ? request.id : undefined;
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
@@ -85,7 +95,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error = data.error;
       }
 
-      return { statusCode: status, message, error, timestamp, path };
+      return { statusCode: status, message, error, timestamp, path, requestId };
     }
 
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
@@ -96,6 +106,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           message: mapeado.message,
           timestamp,
           path,
+          requestId,
         };
       }
     }
@@ -105,6 +116,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message: "Erro interno do servidor.",
       timestamp,
       path,
+      requestId,
     };
   }
 }

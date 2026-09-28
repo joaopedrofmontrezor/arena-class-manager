@@ -22,12 +22,19 @@ describe("IsTimeHHMM", () => {
     },
   );
 
-  it.each(["25:99", "abc", "8h", "18:60", "24:00", "8:00", "08:0", "", "08:00:00"])(
-    "rejeita %s",
-    async (time) => {
-      expect(await isValid(time)).toBe(false);
-    },
-  );
+  it.each([
+    "25:99",
+    "abc",
+    "8h",
+    "18:60",
+    "24:00",
+    "8:00",
+    "08:0",
+    "",
+    "08:00:00",
+  ])("rejeita %s", async (time) => {
+    expect(await isValid(time)).toBe(false);
+  });
 
   it("rejeita valores que não são string", async () => {
     expect(await isValid(800)).toBe(false);

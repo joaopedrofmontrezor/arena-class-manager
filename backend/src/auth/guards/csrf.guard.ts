@@ -6,16 +6,9 @@ import {
 } from "@nestjs/common";
 import { Request } from "express";
 
-import {
-  CSRF_COOKIE_NAME,
-  CSRF_HEADER_NAME,
-} from "../csrf";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "../csrf";
 
-const SAFE_METHODS = new Set([
-  "GET",
-  "HEAD",
-  "OPTIONS",
-]);
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 @Injectable()
 export class CsrfGuard implements CanActivate {
@@ -26,12 +19,10 @@ export class CsrfGuard implements CanActivate {
       return true;
     }
 
-    
     if (req.path === "/auth/login") {
       return true;
     }
 
-    
     if (req.headers.authorization?.startsWith("Bearer ")) {
       return true;
     }
@@ -46,9 +37,7 @@ export class CsrfGuard implements CanActivate {
       headerToken.length === 0 ||
       cookieToken !== headerToken
     ) {
-      throw new ForbiddenException(
-        "Token CSRF inválido ou ausente.",
-      );
+      throw new ForbiddenException("Token CSRF inválido ou ausente.");
     }
 
     return true;
