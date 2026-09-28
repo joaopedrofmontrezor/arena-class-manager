@@ -1,7 +1,15 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LessonType } from "@prisma/client";
+import { LessonType, Prisma, User } from "@prisma/client";
 import { getPeriodoAtual, Periodo } from "./period.util";
+
+type LessonComAssistente = Prisma.LessonGetPayload<{
+  include: { assistant: { select: { id: true; name: true } } };
+}>;
+
+type LessonComProfessor = Prisma.LessonGetPayload<{
+  include: { professor: { select: { name: true } } };
+}>;
 
 @Injectable()
 export class ClosingService {
@@ -10,7 +18,10 @@ export class ClosingService {
   async getResumoProfessor(professorId: string, periodo?: Periodo) {
     const { start, end, label } = periodo ?? getPeriodoAtual();
 
-    const [aulasComoProfessor, aulasComoAuxiliar] = await Promise.all([
+    const [aulasComoProfessor, aulasComoAuxiliar]: [
+      LessonComAssistente[],
+      LessonComProfessor[],
+    ] = await Promise.all([
       this.prisma.lesson.findMany({
         where: { professorId, date: { gte: start, lte: end } },
         orderBy: { date: "asc" },
@@ -24,18 +35,18 @@ export class ClosingService {
     ]);
 
     const turmas = aulasComoProfessor.filter(
-      (a) => a.type === LessonType.TURMA,
+      (a: LessonComAssistente) => a.type === LessonType.TURMA,
     );
     const personais = aulasComoProfessor.filter(
-      (a) => a.type === LessonType.PERSONAL,
+      (a: LessonComAssistente) => a.type === LessonType.PERSONAL,
     );
 
     const valorAulas = aulasComoProfessor.reduce(
-      (soma, a) => soma + Number(a.professorValue),
+      (soma: number, a: LessonComAssistente) => soma + Number(a.professorValue),
       0,
     );
     const valorComoAuxiliar = aulasComoAuxiliar.reduce(
-      (soma, a) => soma + Number(a.assistantValue),
+      (soma: number, a: LessonComProfessor) => soma + Number(a.assistantValue),
       0,
     );
 
@@ -62,19 +73,21 @@ export class ClosingService {
       }),
     ]);
 
-    const idsRelevantes = new Set<string>(professoresAtivos.map((u) => u.id));
+    const idsRelevantes = new Set<string>(
+      professoresAtivos.map((u: User) => u.id),
+    );
     for (const l of idsComAulaNoPeriodo) {
       idsRelevantes.add(l.professorId);
       idsRelevantes.add(l.assistantId);
     }
 
-    const professoresRelevantes = await this.prisma.user.findMany({
+    const professoresRelevantes: User[] = await this.prisma.user.findMany({
       where: { id: { in: Array.from(idsRelevantes) } },
       orderBy: { name: "asc" },
     });
 
     const resumos = await Promise.all(
-      professoresRelevantes.map(async (professor) => {
+      professoresRelevantes.map(async (professor: User) => {
         const resumo = await this.getResumoProfessor(professor.id, p);
         return {
           professorId: professor.id,

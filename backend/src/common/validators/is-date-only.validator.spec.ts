@@ -15,20 +15,23 @@ async function isValid(date: unknown): Promise<boolean> {
 }
 
 describe("IsDateOnly", () => {
-  it.each(["2026-01-01", "2026-09-15", "2026-09-16", "2026-12-31", "2028-02-29"])(
-    "aceita %s (data de calendário real)",
-    async (date) => {
-      expect(await isValid(date)).toBe(true);
-    },
-  );
+  it.each([
+    "2026-01-01",
+    "2026-09-15",
+    "2026-09-16",
+    "2026-12-31",
+    "2028-02-29",
+  ])("aceita %s (data de calendário real)", async (date) => {
+    expect(await isValid(date)).toBe(true);
+  });
 
   it.each([
-    "2026-02-30", 
-    "2027-02-29", 
-    "2026-13-01", 
-    "2026-00-10", 
-    "2026-09-31", 
-    "10/09/2026", 
+    "2026-02-30",
+    "2027-02-29",
+    "2026-13-01",
+    "2026-00-10",
+    "2026-09-31",
+    "10/09/2026",
     "2026-9-5",
     "abc",
     "",

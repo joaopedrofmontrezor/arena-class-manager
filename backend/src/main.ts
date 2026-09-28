@@ -1,15 +1,23 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/validate-env";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
+import { requestIdMiddleware } from "./common/middleware/request-id.middleware";
 
 async function bootstrap() {
   validateEnv();
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const logger = app.get(Logger);
+  app.useLogger(logger);
+
+  app.enableShutdownHooks();
+
+  app.use(requestIdMiddleware);
 
   app.use(helmet());
   app.use(cookieParser());
@@ -34,10 +42,11 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Arena Futevolei API rodando na porta ${port}`);
+
+  logger.log(`Arena Futevolei API rodando na porta ${port}`);
   if (!frontendUrl) {
-    console.warn(
-      "AVISO: FRONTEND_URL nao configurada — CORS esta aberto para qualquer origem (modo desenvolvimento).",
+    logger.warn(
+      "FRONTEND_URL nao configurada — CORS esta aberto para qualquer origem (modo desenvolvimento).",
     );
   }
 }
