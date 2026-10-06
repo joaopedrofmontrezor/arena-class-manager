@@ -68,5 +68,8 @@
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }
