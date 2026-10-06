@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
 
 defaults:
   run:
@@ -33,3 +34,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Auditoria de dependências (nível alto)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Build da imagem Docker (validação)
+        run: docker build --build-arg VITE_API_URL=http://localhost:3000 -t arena-frontend:ci .
