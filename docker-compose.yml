@@ -1,0 +1,76 @@
+# Uso local/staging para validar as imagens de Docker ponta a ponta antes
+# do deploy real. NÃO é o arranjo recomendado para produção (lá, backend e
+# frontend normalmente são implantados em serviços gerenciados separados,
+# e o banco já é o Postgres gerenciado via Neon — não este container).
+#
+# Como usar:
+#   1. Copie backend/.env.example para backend/.env e ajuste os valores
+#      (aqui local, DATABASE_URL/DIRECT_URL já apontam para o serviço
+#      "postgres" abaixo).
+#   2. docker compose up --build
+#   3. Aplique as migrations contra o banco do compose — a partir do SEU
+#      terminal (host), não com `docker compose exec backend ...`: a
+#      imagem de produção do backend remove a CLI do prisma (ela é
+#      devDependency e é apagada pelo `npm prune --omit=dev` no
+#      Dockerfile, de propósito, para manter a imagem final pequena). Rode:
+#        cd backend
+#        DATABASE_URL=postgresql://arena:arena@localhost:5432/arena_futevolei \
+#          npx prisma migrate deploy
+#   4. Backend em http://localhost:3000, frontend em http://localhost:8080
+#
+# As migrations são aplicadas manualmente (passo 3), de propósito: nunca
+# rodar `prisma migrate deploy` automaticamente no entrypoint do container,
+# para não arriscar aplicar uma migration sem alguém olhando antes.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: arena
+      POSTGRES_PASSWORD: arena
+      POSTGRES_DB: arena_futevolei
+    ports:
+      - "5432:5432"
+    volumes:
+      - arena_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena -d arena_futevolei"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Sobrescreve o que estiver em backend/.env para sempre apontar para
+      # o Postgres deste compose, mesmo que o .env local tenha uma
+      # connection string do Neon.
+      DATABASE_URL: postgresql://arena:arena@postgres:5432/arena_futevolei
+      DIRECT_URL: postgresql://arena:arena@postgres:5432/arena_futevolei
+      # Sem isto, com NODE_ENV=production (fixado no Dockerfile) o CORS do
+      # backend fica fechado para TODAS as origens — o navegador bloqueia a
+      # resposta do login, o que aparece como "não foi possível conectar ao
+      # servidor" mesmo com a API de pé (curl/health não é afetado por CORS,
+      # só o navegador é). Precisa bater com a porta do frontend abaixo (8080).
+      FRONTEND_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3000
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  arena_postgres_data:
