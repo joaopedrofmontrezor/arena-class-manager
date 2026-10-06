@@ -58,7 +58,7 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Type-check
-        run: npx tsc --noEmit
+        run: npx tsc -p tsconfig.build.json --noEmit
       
       - name: Testes unitários
         run: npm test -- --ci
