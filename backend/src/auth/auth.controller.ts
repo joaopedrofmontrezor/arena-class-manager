@@ -68,7 +68,7 @@ export class AuthController {
 
     res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
 
-    return { user };
+    return { user, csrfToken };
   }
 
   @Post("logout")
@@ -94,7 +94,7 @@ export class AuthController {
 
     res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
 
-    return { ok: true };
+    return { csrfToken };
   }
 
   @Get("me")
