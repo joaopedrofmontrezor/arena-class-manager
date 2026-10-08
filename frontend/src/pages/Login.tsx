@@ -26,14 +26,16 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center bg-teal px-6">
-      <div className="max-w-sm w-full mx-auto">
-        <p className="font-display font-semibold text-3xl text-white mb-1">
-          Arena Futevôlei
-        </p>
-        <p className="text-white/70 text-sm mb-8">
-          Controle de aulas e fechamentos
-        </p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-teal px-6">
+      <div className="w-full max-w-sm sm:max-w-md mx-auto">
+        <div className="text-center">
+          <p className="font-display font-semibold text-3xl sm:text-4xl text-white mb-1">
+            Arena Futevôlei
+          </p>
+          <p className="text-white/70 text-sm sm:text-base mb-8">
+            Controle de aulas e fechamentos
+          </p>
+        </div>
 
         <form
           onSubmit={handleSubmit}

@@ -5,7 +5,7 @@ import {
   useEffect,
   ReactNode,
 } from "react";
-import api from "../api/client";
+import api, { setCsrfToken } from "../api/client";
 import { User } from "../types";
 
 interface AuthContextValue {
@@ -26,14 +26,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     api
       .get("/auth/me")
-      .then((res) => setUser(res.data))
-      .catch(() => setUser(null))
+      .then((res) => {
+        setUser(res.data);
+        
+        return api.get("/auth/csrf").then((csrfRes) => {
+          setCsrfToken(csrfRes.data.csrfToken);
+        });
+      })
+      .catch(() => {
+        setUser(null);
+        setCsrfToken(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   async function login(email: string, password: string) {
     const { data } = await api.post("/auth/login", { email, password });
     setUser(data.user);
+    setCsrfToken(data.csrfToken);
   }
 
   async function logout() {
@@ -41,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.post("/auth/logout");
     } finally {
       setUser(null);
+      setCsrfToken(null);
     }
   }
 
