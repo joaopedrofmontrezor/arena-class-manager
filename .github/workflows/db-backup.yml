@@ -14,7 +14,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker run --rm postgres:16 \
+          docker run --rm postgres:18 \
             pg_dump "${{ secrets.BACKUP_DATABASE_URL }}" \
             --no-owner --no-privileges --format=plain \
             | gzip > "backup-$(date +%F).sql.gz"
