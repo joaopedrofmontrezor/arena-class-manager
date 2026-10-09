@@ -1,0 +1,28 @@
+name: Backup do banco de produção
+
+on:
+  schedule:
+    - cron: "0 6 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Gerar dump do banco (pg_dump)
+        run: |
+          set -euo pipefail
+
+          docker run --rm postgres:16 \
+            pg_dump "${{ secrets.BACKUP_DATABASE_URL }}" \
+            --no-owner --no-privileges --format=plain \
+            | gzip > "backup-$(date +%F).sql.gz"
+
+      - name: Enviar backup como artefato do GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-banco-${{ github.run_id }}
+          path: backup-*.sql.gz
+
+          retention-days: 90
