@@ -8,7 +8,24 @@ const api = axios.create({
 
 const SAFE_METHODS = new Set(["get", "head", "options"]);
 
+const ACCESS_TOKEN_STORAGE_KEY = "arena_access_token";
+
+let accessToken: string | null = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+
 let csrfToken: string | null = null;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  if (token) {
+    localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  }
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
 
 export function setCsrfToken(token: string | null): void {
   csrfToken = token;
@@ -16,6 +33,10 @@ export function setCsrfToken(token: string | null): void {
 
 api.interceptors.request.use((config) => {
   const method = (config.method || "get").toLowerCase();
+
+  if (accessToken) {
+    config.headers.set("Authorization", `Bearer ${accessToken}`);
+  }
 
   if (SAFE_METHODS.has(method)) {
     return config;
