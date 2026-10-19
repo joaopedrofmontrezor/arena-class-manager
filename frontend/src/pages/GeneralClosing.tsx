@@ -159,7 +159,7 @@ export function GeneralClosing() {
                         >
                           {a.type === 'TURMA' ? 'Turma' : 'Personal'}
                         </span>
-                        <span className="text-xs text-ink-soft">Auxiliar: {a.assistant?.name ?? '—'}</span>
+                        <span className="text-xs text-ink-soft">{a.assistant ? `Auxiliar: ${a.assistant.name}` : 'Sem auxiliar'}</span>
                       </div>
                     </div>
                   ))}

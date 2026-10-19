@@ -15,7 +15,7 @@ export interface Lesson {
   time: string;
   type: LessonType;
   professorId: string;
-  assistantId: string;
+  assistantId: string | null;
   professorValue: string;
   assistantValue: string;
   observation?: string | null;

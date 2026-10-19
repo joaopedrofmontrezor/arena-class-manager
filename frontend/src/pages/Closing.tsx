@@ -147,7 +147,7 @@ export function Closing() {
                         {a.type === "TURMA" ? "Turma" : "Personal"}
                       </span>
                       <span className="text-xs text-ink-soft">
-                        Auxiliar: {a.assistant?.name ?? "—"}
+                        {a.assistant ? `Auxiliar: ${a.assistant.name}` : "Sem auxiliar"}
                       </span>
                     </div>
                   </div>

@@ -102,8 +102,11 @@ export function MyLessons() {
             </div>
 
             <p className="text-xs text-ink-soft">
-              Auxiliar: {lesson.assistant?.name ?? "—"} (
-              {formatBRL(lesson.assistantValue)})
+              {lesson.assistant
+                ? `Auxiliar: ${lesson.assistant.name} (${formatBRL(
+                    lesson.assistantValue,
+                  )})`
+                : "Sem auxiliar"}
             </p>
             {lesson.observation && (
               <p className="text-xs text-ink-soft mt-1 italic">
