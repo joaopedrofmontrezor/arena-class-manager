@@ -38,7 +38,7 @@ model Lesson {
   time           String
   type           LessonType
   professorId    String
-  assistantId    String
+  assistantId    String?
   professorValue Decimal    @db.Decimal(10, 2)
   assistantValue Decimal    @db.Decimal(10, 2)
   observation    String?
@@ -46,7 +46,7 @@ model Lesson {
   updatedAt      DateTime   @updatedAt
 
   professor User @relation("ProfessorLessons", fields: [professorId], references: [id])
-  assistant User @relation("AssistantLessons", fields: [assistantId], references: [id])
+  assistant User? @relation("AssistantLessons", fields: [assistantId], references: [id])
 
   
   @@index([professorId, date])

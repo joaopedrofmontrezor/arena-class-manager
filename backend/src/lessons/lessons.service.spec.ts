@@ -22,6 +22,7 @@ describe("LessonsService", () => {
         delete: jest.fn(),
       },
       user: { findUnique: jest.fn() },
+      $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -58,6 +59,46 @@ describe("LessonsService", () => {
           }),
         }),
       );
+    });
+
+    it("aula sem auxiliar (assistantId ausente) grava assistantId null e assistantValue 0", async () => {
+      await service.create(PROFESSOR_ID, {
+        date: "2026-09-10",
+        time: "08:00",
+        type: LessonType.TURMA,
+      } as any);
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.lesson.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            professorValue: 28,
+            assistantId: null,
+            assistantValue: 0,
+          }),
+        }),
+      );
+    });
+
+    it("assistantId vazio ou null também significa sem auxiliar", async () => {
+      for (const vazio of ["", null]) {
+        prisma.lesson.create.mockClear();
+        await service.create(PROFESSOR_ID, {
+          date: "2026-09-10",
+          time: "08:00",
+          type: LessonType.TURMA,
+          assistantId: vazio,
+        } as any);
+
+        expect(prisma.lesson.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              assistantId: null,
+              assistantValue: 0,
+            }),
+          }),
+        );
+      }
     });
 
     it("PERSONAL grava o valor informado", async () => {
@@ -129,6 +170,95 @@ describe("LessonsService", () => {
     });
   });
 
+  describe("createBatch", () => {
+    const base = { date: "2026-09-10" };
+
+    it("cria todas as aulas do dia na mesma transação, com valores corretos", async () => {
+      auxiliarValido();
+
+      await service.createBatch(PROFESSOR_ID, {
+        ...base,
+        lessons: [
+          { time: "08:00", type: LessonType.TURMA, assistantId: AUXILIAR_ID },
+          { time: "09:00", type: LessonType.TURMA, assistantId: null },
+          { time: "10:00", type: LessonType.PERSONAL, professorValue: 70 },
+        ],
+      } as any);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.lesson.create).toHaveBeenCalledTimes(3);
+
+      const dados = prisma.lesson.create.mock.calls.map(
+        (c: any[]) => c[0].data,
+      );
+      expect(dados[0]).toMatchObject({
+        time: "08:00",
+        professorValue: 28,
+        assistantId: AUXILIAR_ID,
+        assistantValue: 10.5,
+      });
+      expect(dados[1]).toMatchObject({
+        time: "09:00",
+        professorValue: 28,
+        assistantId: null,
+        assistantValue: 0,
+      });
+      expect(dados[2]).toMatchObject({
+        time: "10:00",
+        professorValue: 70,
+        assistantId: null,
+        assistantValue: 0,
+      });
+    });
+
+    it("auxiliar inválido em qualquer item cancela o lote inteiro (nada é salvo)", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createBatch(PROFESSOR_ID, {
+          ...base,
+          lessons: [
+            { time: "08:00", type: LessonType.TURMA, assistantId: null },
+            { time: "09:00", type: LessonType.TURMA, assistantId: "x" },
+          ],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.lesson.create).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("PERSONAL sem valor em qualquer item cancela o lote inteiro", async () => {
+      await expect(
+        service.createBatch(PROFESSOR_ID, {
+          ...base,
+          lessons: [
+            { time: "08:00", type: LessonType.TURMA },
+            { time: "09:00", type: LessonType.PERSONAL },
+          ],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.lesson.create).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("o professor não pode ser auxiliar de si mesmo em nenhum item", async () => {
+      await expect(
+        service.createBatch(PROFESSOR_ID, {
+          ...base,
+          lessons: [
+            {
+              time: "08:00",
+              type: LessonType.TURMA,
+              assistantId: PROFESSOR_ID,
+            },
+          ],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe("update", () => {
     function aulaExistenteTurma() {
       prisma.lesson.findUnique.mockResolvedValue({
@@ -184,6 +314,40 @@ describe("LessonsService", () => {
       expect(prisma.lesson.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ professorValue: 60 }),
+        }),
+      );
+    });
+
+    it("assistantId null remove o auxiliar e zera assistantValue", async () => {
+      aulaExistenteTurma();
+      await service.update("lesson-1", PROFESSOR_ID, "PROFESSOR", {
+        assistantId: null,
+      } as any);
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.lesson.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            assistantId: null,
+            assistantValue: 0,
+          }),
+        }),
+      );
+    });
+
+    it("sem assistantId no DTO mantém o auxiliar atual", async () => {
+      aulaExistenteTurma();
+      auxiliarValido();
+      await service.update("lesson-1", PROFESSOR_ID, "PROFESSOR", {
+        time: "09:00",
+      } as any);
+
+      expect(prisma.lesson.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            assistantId: AUXILIAR_ID,
+            assistantValue: 10.5,
+          }),
         }),
       );
     });

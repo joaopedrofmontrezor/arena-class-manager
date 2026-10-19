@@ -110,7 +110,13 @@ describe("CreateLessonDto - regras financeiras", () => {
     );
   });
 
-  it("rejeita quando faltam campos obrigatórios (date, time, assistantId)", async () => {
+  it("rejeita quando faltam campos obrigatórios (date, time)", async () => {
     expect(await isValid({ type: "TURMA" as any })).toBe(false);
+  });
+
+  it("é válida uma aula sem auxiliar (assistantId ausente ou null)", async () => {
+    const { assistantId: _omitido, ...semAuxiliar } = baseValida();
+    expect(await isValid(semAuxiliar)).toBe(true);
+    expect(await isValid({ ...semAuxiliar, assistantId: null })).toBe(true);
   });
 });

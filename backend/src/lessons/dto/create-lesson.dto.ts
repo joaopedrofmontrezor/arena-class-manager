@@ -25,8 +25,10 @@ export class CreateLessonDto {
   @IsEnum(LessonType)
   type!: LessonType;
 
+  // Opcional: aula dada sem auxiliar. Ausente/null = sem auxiliar.
+  @IsOptional()
   @IsString()
-  assistantId!: string;
+  assistantId?: string | null;
 
   @ValidateIf((dto: CreateLessonDto) => dto.type === LessonType.PERSONAL)
   @IsNumber({ maxDecimalPlaces: 2 })

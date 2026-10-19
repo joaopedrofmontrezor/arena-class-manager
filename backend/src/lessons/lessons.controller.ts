@@ -13,6 +13,7 @@ import { AuthGuard } from "@nestjs/passport";
 import { LessonsService } from "./lessons.service";
 import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
+import { CreateLessonsBatchDto } from "./dto/create-lessons-batch.dto";
 import {
   CurrentUser,
   CurrentUserData,
@@ -28,6 +29,14 @@ export class LessonsController {
   @Post()
   create(@CurrentUser() user: CurrentUserData, @Body() dto: CreateLessonDto) {
     return this.lessonsService.create(user.userId, dto);
+  }
+
+  @Post("batch")
+  createBatch(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: CreateLessonsBatchDto,
+  ) {
+    return this.lessonsService.createBatch(user.userId, dto);
   }
 
   @Get()

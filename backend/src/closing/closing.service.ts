@@ -78,7 +78,7 @@ export class ClosingService {
     );
     for (const l of idsComAulaNoPeriodo) {
       idsRelevantes.add(l.professorId);
-      idsRelevantes.add(l.assistantId);
+      if (l.assistantId) idsRelevantes.add(l.assistantId);
     }
 
     const professoresRelevantes: User[] = await this.prisma.user.findMany({

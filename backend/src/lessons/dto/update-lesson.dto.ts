@@ -25,9 +25,10 @@ export class UpdateLessonDto {
   @IsEnum(LessonType)
   type?: LessonType;
 
+  
   @IsOptional()
   @IsString()
-  assistantId?: string;
+  assistantId?: string | null;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })

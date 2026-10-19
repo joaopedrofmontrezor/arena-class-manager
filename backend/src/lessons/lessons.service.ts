@@ -8,6 +8,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { LessonType, Role } from "@prisma/client";
 import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
+import { CreateLessonsBatchDto } from "./dto/create-lessons-batch.dto";
 import { VALOR_TURMA_PROFESSOR, VALOR_AUXILIAR } from "./lessons.constants";
 
 @Injectable()
@@ -37,7 +38,16 @@ export class LessonsService {
     return professorValue;
   }
 
-  private async assertValidAssistant(assistantId: string, professorId: string) {
+  private normalizeAssistantId(assistantId?: string | null): string | null {
+    return assistantId ? assistantId : null;
+  }
+
+  private async assertValidAssistant(
+    assistantId: string | null,
+    professorId: string,
+  ) {
+    if (assistantId === null) return;
+
     if (assistantId === professorId) {
       throw new BadRequestException(
         "O professor da aula não pode ser o próprio auxiliar.",
@@ -53,7 +63,8 @@ export class LessonsService {
   }
 
   async create(professorId: string, dto: CreateLessonDto) {
-    await this.assertValidAssistant(dto.assistantId, professorId);
+    const assistantId = this.normalizeAssistantId(dto.assistantId);
+    await this.assertValidAssistant(assistantId, professorId);
     const professorValue = this.resolveProfessorValue(
       dto.type,
       dto.professorValue,
@@ -65,12 +76,48 @@ export class LessonsService {
         time: dto.time,
         type: dto.type,
         professorId,
-        assistantId: dto.assistantId,
+        assistantId,
         professorValue,
-        assistantValue: VALOR_AUXILIAR,
+        assistantValue: assistantId ? VALOR_AUXILIAR : 0,
         observation: dto.observation,
       },
     });
+  }
+
+  async createBatch(professorId: string, dto: CreateLessonsBatchDto) {
+    const date = new Date(dto.date);
+
+    const rows = dto.lessons.map((item) => ({
+      assistantId: this.normalizeAssistantId(item.assistantId),
+      item,
+    }));
+
+    const idsAuxiliares = Array.from(
+      new Set(
+        rows.map((r) => r.assistantId).filter((id): id is string => !!id),
+      ),
+    );
+    for (const id of idsAuxiliares) {
+      await this.assertValidAssistant(id, professorId);
+    }
+
+    const data = rows.map(({ assistantId, item }) => ({
+      date,
+      time: item.time,
+      type: item.type,
+      professorId,
+      assistantId,
+      professorValue: this.resolveProfessorValue(
+        item.type,
+        item.professorValue,
+      ),
+      assistantValue: assistantId ? VALOR_AUXILIAR : 0,
+      observation: item.observation,
+    }));
+
+    return this.prisma.$transaction(
+      data.map((d) => this.prisma.lesson.create({ data: d })),
+    );
   }
 
   findMineByPeriod(professorId: string, start: Date, end: Date) {
@@ -129,7 +176,10 @@ export class LessonsService {
       finalProfessorValueInput,
     );
 
-    const finalAssistantId = dto.assistantId ?? lesson.assistantId;
+    const finalAssistantId =
+      dto.assistantId === undefined
+        ? lesson.assistantId
+        : this.normalizeAssistantId(dto.assistantId);
     await this.assertValidAssistant(finalAssistantId, lesson.professorId);
 
     return this.prisma.lesson.update({
@@ -140,6 +190,7 @@ export class LessonsService {
         type: finalType,
         assistantId: finalAssistantId,
         professorValue,
+        assistantValue: finalAssistantId ? VALOR_AUXILIAR : 0,
         observation: dto.observation,
       },
     });
