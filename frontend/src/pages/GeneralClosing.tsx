@@ -4,7 +4,8 @@ import api from '../api/client';
 import { getErrorMessage } from '../api/errors';
 import { Layout } from '../components/Layout';
 import { Modal } from '../components/Modal';
-import { ResumoGeral, ResumoGeralItem, ResumoProfessor } from '../types';
+import { EditLessonModal } from '../components/EditLessonModal';
+import { Lesson, ResumoGeral, ResumoGeralItem, ResumoProfessor } from '../types';
 import { getPeriodoAtual, getPeriodoAnterior, getProximoPeriodo, toQueryDate, Periodo } from '../utils/period';
 
 function formatBRL(value: number) {
@@ -24,6 +25,12 @@ export function GeneralClosing() {
   const [selecionado, setSelecionado] = useState<ResumoGeralItem | null>(null);
   const [detalhe, setDetalhe] = useState<ResumoProfessor | null>(null);
   const [detalheLoading, setDetalheLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [editando, setEditando] = useState<Lesson | null>(null);
+
+  const periodoAtual = getPeriodoAtual();
+  const estaNoPeriodoAtual = toQueryDate(periodo.start) === toQueryDate(periodoAtual.start);
 
   useEffect(() => {
     setLoading(true);
@@ -35,18 +42,48 @@ export function GeneralClosing() {
       .then((res) => setResumo(res.data))
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
-  }, [periodo]);
+  }, [periodo, reloadKey]);
 
-  function abrirDetalhe(professor: ResumoGeralItem) {
-    setSelecionado(professor);
+  function carregarDetalhe(professorId: string) {
     setDetalheLoading(true);
-    setDetalhe(null);
     api
-      .get<ResumoProfessor>(`/closing/professor/${professor.professorId}`, {
+      .get<ResumoProfessor>(`/closing/professor/${professorId}`, {
         params: { start: toQueryDate(periodo.start), end: toQueryDate(periodo.end) },
       })
       .then((res) => setDetalhe(res.data))
       .finally(() => setDetalheLoading(false));
+  }
+
+  function abrirDetalhe(professor: ResumoGeralItem) {
+    setSelecionado(professor);
+    setActionError('');
+    setDetalhe(null);
+    carregarDetalhe(professor.professorId);
+  }
+
+  
+  function recarregarTudo() {
+    if (selecionado) carregarDetalhe(selecionado.professorId);
+    setReloadKey((k) => k + 1);
+  }
+
+  async function excluirAula(aula: Lesson) {
+    const aviso = estaNoPeriodoAtual
+      ? ''
+      : `\n\nATENÇÃO: este período (${periodo.label}) já passou. Excluir vai alterar o fechamento dele.`;
+    if (
+      !confirm(
+        `Excluir a aula de ${selecionado?.nome} em ${formatDate(aula.date)} às ${aula.time}?${aviso}`,
+      )
+    )
+      return;
+    setActionError('');
+    try {
+      await api.delete(`/lessons/${aula.id}`);
+      recarregarTudo();
+    } catch (err) {
+      setActionError(getErrorMessage(err, 'Não foi possível excluir a aula.'));
+    }
   }
 
   return (
@@ -64,10 +101,15 @@ export function GeneralClosing() {
         </button>
       </div>
 
-      <div className="text-center mb-4">
+      <div className="text-center mb-4 space-x-4">
         <Link to="/professores" className="text-xs text-coral font-medium underline">
           Gerenciar professores
         </Link>
+        {!estaNoPeriodoAtual && (
+          <button onClick={() => setPeriodo(periodoAtual)} className="text-xs text-coral font-medium underline">
+            Voltar para o período atual
+          </button>
+        )}
       </div>
 
       {loading && <p className="text-ink-soft text-sm text-center">Carregando...</p>}
@@ -130,6 +172,8 @@ export function GeneralClosing() {
         <Modal title={selecionado.nome} onClose={() => setSelecionado(null)}>
           {detalheLoading && <p className="text-ink-soft text-sm">Carregando...</p>}
 
+          {actionError && <p className="text-sm text-coral-dark mb-3">{actionError}</p>}
+
           {!detalheLoading && detalhe && (
             <>
               <div className="grid grid-cols-2 gap-3 mb-5">
@@ -148,7 +192,9 @@ export function GeneralClosing() {
                   {detalhe.aulas.map((a) => (
                     <div key={a.id} className="bg-surface rounded-card px-4 py-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{formatDate(a.date)}</p>
+                        <p className="text-sm font-medium">
+                          {formatDate(a.date)} · {a.time}
+                        </p>
                         <p className="text-sm font-semibold">{formatBRL(Number(a.professorValue))}</p>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
@@ -161,6 +207,14 @@ export function GeneralClosing() {
                         </span>
                         <span className="text-xs text-ink-soft">{a.assistant ? `Auxiliar: ${a.assistant.name}` : 'Sem auxiliar'}</span>
                       </div>
+                      <div className="flex gap-4 mt-2 pt-2 border-t border-black/5">
+                        <button onClick={() => setEditando(a)} className="text-xs font-medium text-teal">
+                          Editar
+                        </button>
+                        <button onClick={() => excluirAula(a)} className="text-xs font-medium text-coral-dark">
+                          Excluir
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -170,6 +224,22 @@ export function GeneralClosing() {
             </>
           )}
         </Modal>
+      )}
+
+      {editando && (
+        <EditLessonModal
+          lesson={editando}
+          aviso={
+            estaNoPeriodoAtual
+              ? undefined
+              : `Este período (${periodo.label}) já passou. Alterar a aula muda o fechamento dele.`
+          }
+          onClose={() => setEditando(null)}
+          onSaved={() => {
+            setEditando(null);
+            recarregarTudo();
+          }}
+        />
       )}
     </Layout>
   );
