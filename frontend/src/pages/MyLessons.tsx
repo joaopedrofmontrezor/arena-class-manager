@@ -3,7 +3,15 @@ import { Link } from "react-router-dom";
 import api from "../api/client";
 import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
+import { EditLessonModal } from "../components/EditLessonModal";
 import { Lesson } from "../types";
+import {
+  getPeriodoAtual,
+  getPeriodoAnterior,
+  getProximoPeriodo,
+  toQueryDate,
+  Periodo,
+} from "../utils/period";
 
 function formatBRL(value: string | number) {
   return Number(value).toLocaleString("pt-BR", {
@@ -17,52 +25,97 @@ function formatDate(iso: string) {
 }
 
 export function MyLessons() {
+  const [periodo, setPeriodo] = useState<Periodo>(getPeriodoAtual());
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState("");
+  const [editing, setEditing] = useState<Lesson | null>(null);
+
+  const periodoAtual = getPeriodoAtual();
+  const estaNoPeriodoAtual =
+    toQueryDate(periodo.start) === toQueryDate(periodoAtual.start);
+
+  
+  const avisoPeriodoPassado = estaNoPeriodoAtual
+    ? undefined
+    : `Este período (${periodo.label}) já passou. Alterar a aula muda o fechamento dele.`;
 
   function load() {
     setLoading(true);
     api
-      .get<Lesson[]>("/lessons")
+      .get<Lesson[]>("/lessons", {
+        params: {
+          start: toQueryDate(periodo.start),
+          end: toQueryDate(periodo.end),
+        },
+      })
       .then((res) => setLessons(res.data))
+      .catch((err) =>
+        setActionError(getErrorMessage(err, "Não foi possível carregar.")),
+      )
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, []);
+  useEffect(() => {
+    setActionError("");
+    load();
+  }, [periodo]);
 
-  async function handleDelete(id: string) {
-    if (!confirm("Excluir esta aula?")) return;
+  async function handleDelete(lesson: Lesson) {
+    const aviso = estaNoPeriodoAtual
+      ? ""
+      : `\n\nATENÇÃO: este período (${periodo.label}) já passou. Excluir vai alterar o fechamento dele.`;
+    if (
+      !confirm(
+        `Excluir a aula de ${formatDate(lesson.date)} às ${lesson.time}?${aviso}`,
+      )
+    )
+      return;
     setActionError("");
     try {
-      await api.delete(`/lessons/${id}`);
+      await api.delete(`/lessons/${lesson.id}`);
       load();
     } catch (err) {
       setActionError(getErrorMessage(err, "Não foi possível excluir a aula."));
     }
   }
 
-  async function handleEditValue(lesson: Lesson) {
-    const novoValor = prompt("Novo valor da aula (R$):", lesson.professorValue);
-    if (novoValor === null) return;
-    const parsed = Number(novoValor.replace(",", "."));
-    if (Number.isNaN(parsed)) return;
-    setActionError("");
-    try {
-      await api.patch(`/lessons/${lesson.id}`, { professorValue: parsed });
-      load();
-    } catch (err) {
-      setActionError(getErrorMessage(err, "Não foi possível editar a aula."));
-    }
-  }
-
   return (
     <Layout>
-      <div className="flex items-center justify-between mb-5">
-        <p className="font-display font-semibold text-xl">Minhas aulas</p>
-        <Link to="/aulas/nova" className="text-sm text-coral font-medium">
-          + Nova
-        </Link>
+      <div className="flex items-center justify-between mb-1">
+        <button
+          onClick={() => setPeriodo(getPeriodoAnterior(periodo))}
+          className="text-ink-soft text-lg px-2 py-1 -ml-2"
+          aria-label="Período anterior"
+        >
+          ◀
+        </button>
+        <div className="text-center">
+          <p className="text-sm text-ink-soft">Minhas aulas</p>
+          <p className="font-display font-semibold text-lg">{periodo.label}</p>
+        </div>
+        <button
+          onClick={() => setPeriodo(getProximoPeriodo(periodo))}
+          className="text-ink-soft text-lg px-2 py-1 -mr-2"
+          aria-label="Próximo período"
+        >
+          ▶
+        </button>
+      </div>
+
+      <div className="text-center mb-4">
+        {estaNoPeriodoAtual ? (
+          <Link to="/aulas/nova" className="text-xs text-coral font-medium">
+            + Nova aula
+          </Link>
+        ) : (
+          <button
+            onClick={() => setPeriodo(periodoAtual)}
+            className="text-xs text-coral font-medium underline"
+          >
+            Voltar para o período atual
+          </button>
+        )}
       </div>
 
       {loading && <p className="text-ink-soft text-sm">Carregando...</p>}
@@ -116,13 +169,13 @@ export function MyLessons() {
 
             <div className="flex gap-4 mt-3 pt-3 border-t border-black/5">
               <button
-                onClick={() => handleEditValue(lesson)}
+                onClick={() => setEditing(lesson)}
                 className="text-xs font-medium text-teal"
               >
-                Editar valor
+                Editar
               </button>
               <button
-                onClick={() => handleDelete(lesson.id)}
+                onClick={() => handleDelete(lesson)}
                 className="text-xs font-medium text-coral-dark"
               >
                 Excluir
@@ -131,6 +184,18 @@ export function MyLessons() {
           </div>
         ))}
       </div>
+
+      {editing && (
+        <EditLessonModal
+          lesson={editing}
+          aviso={avisoPeriodoPassado}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
     </Layout>
   );
 }
