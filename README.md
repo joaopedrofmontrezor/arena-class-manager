@@ -18,7 +18,7 @@ Dois perfis de acesso:
 | Backend    | NestJS 10 + TypeScript, Prisma ORM, PostgreSQL, JWT + Passport      |
 | Frontend   | React 18 + TypeScript, Vite, Tailwind CSS, React Router             |
 | Banco      | PostgreSQL gerenciado (Neon) em produção                            |
-| Deploy     | Backend no Railway · Frontend no Vercel                             |
+| Deploy     | Backend no Render · Frontend no Vercel                              |
 | CI         | GitHub Actions (lint, type-check, testes, build, Docker)            |
 
 ## Estrutura do repositório
@@ -30,17 +30,23 @@ Dois perfis de acesso:
 │   │   ├── auth/        # Login, JWT, CSRF, guards de role
 │   │   ├── users/       # Cadastro/edição de professores (Owner)
 │   │   ├── lessons/     # CRUD de aulas
+│   │   ├── config/      # Configurações Gerais
 │   │   ├── closing/     # Fechamento (resumo por professor e geral)
 │   │   ├── health/      # GET /health (usado por monitoramento)
-│   │   └── common/      # DTOs, validators, filtros e middlewares compartilhados
-│   └── prisma/          # schema.prisma e migrations
+│   │   ├── common/      # DTOs, validators, filtros e middlewares compartilhados
+│   │   └── prisma/      # Serviços do Prisma
+│   ├── prisma/          # schema.prisma e migrations
+│   └── test/            # Testes automatizados
 ├── frontend/            # SPA React
 │   └── src/
-│       ├── pages/        # Login, Dashboard, Aulas, Fechamento, Professores...
-│       ├── context/       # AuthContext (sessão do usuário logado)
-│       └── api/           # Cliente axios configurado
-├── docker-compose.yml    # Ambiente local completo (Postgres + backend + frontend)
-└── .github/workflows/    # CI de backend/frontend + backup semanal do banco
+│       ├── pages/       # Login, Dashboard, Aulas, Fechamento, Professores...
+│       ├── context/     # AuthContext (sessão do usuário logado)
+│       ├── components/  # Layout, Modal, Editar  Aulas...
+│        ── utils/       # Regras de Fechamento, Calendário...
+│       └── api/         # Cliente axios configurado
+├── docker-compose.yml   # Ambiente local completo (Postgres + backend + frontend)
+├── README.md            # Documentação e explicação do Projeto
+└── .github/workflows/   # CI de backend/frontend + backup semanal do banco
 ```
 
 ## Rodando localmente
@@ -111,7 +117,7 @@ completos.
 ## Autenticação
 
 Login é feito por e-mail/senha (`POST /auth/login`), que retorna um JWT.
-Em produção, backend e frontend ficam em domínios diferentes (Railway +
+Em produção, backend e frontend ficam em domínios diferentes (Render +
 Vercel); como o Safari/iOS bloqueia cookies de terceiros definidos via
 fetch/XHR nesse cenário, o token também é devolvido no corpo da resposta e
 guardado em memória no frontend, enviado via header `Authorization: Bearer`
@@ -132,10 +138,17 @@ repositório (a `DIRECT_URL` do Neon).
 
 ## Deploy
 
-- **Backend**: Railway, a partir do `backend/Dockerfile`. Variáveis de
-  ambiente configuradas no painel do Railway (mesmas da tabela acima).
+- **Backend**: Render (Web Service, Docker), a partir do
+  `backend/Dockerfile` (Root Directory `backend`, Health Check Path
+  `/health`). Variáveis de ambiente configuradas no painel do Render
+  (mesmas da tabela acima; `PORT` é definida pelo próprio Render). No plano
+  Free o serviço "dorme" após 15 min sem tráfego e o primeiro acesso
+  seguinte leva cerca de 1 min; um plano pago elimina isso. Como o
+  Dockerfile é portátil, trocar de hospedagem só exige recriar as variáveis
+  de ambiente e atualizar `VITE_API_URL` no frontend.
 - **Frontend**: Vercel, buildado com `VITE_API_URL` apontando para a URL
-  pública do backend no Railway.
+  pública do backend no Render. Como o Vite embute essa variável no build,
+  qualquer mudança nela exige um novo deploy (Redeploy) na Vercel.
 - **Banco**: Neon (Postgres gerenciado), com `DATABASE_URL` (pooled) para
   runtime e `DIRECT_URL` para migrations.
 
@@ -154,4 +167,4 @@ pasta:
 
 ## Licença
 
-Projeto privado/interno da Arena Futevôlei.
+Projeto privado/interno da Arena Futevôlei - La Playa Club Matão.
