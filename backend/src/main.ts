@@ -1,4 +1,5 @@
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { Logger } from "nestjs-pino";
 import cookieParser from "cookie-parser";
@@ -11,11 +12,15 @@ import { requestIdMiddleware } from "./common/middleware/request-id.middleware";
 async function bootstrap() {
   validateEnv();
 
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   const logger = app.get(Logger);
   app.useLogger(logger);
 
   app.enableShutdownHooks();
+
+  app.set("trust proxy", 1);
 
   app.use(requestIdMiddleware);
 
