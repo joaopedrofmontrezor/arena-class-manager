@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { Request } from "express";
 import { Role } from "@prisma/client";
 
+import { PrismaService } from "../prisma/prisma.service";
 import { requireJwtSecret } from "./jwt-secret";
 
 export interface JwtPayload {
@@ -18,7 +19,7 @@ function cookieExtractor(req: Request): string | null {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         cookieExtractor,
@@ -34,10 +35,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     role: Role;
     name: string;
   }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, name: true, role: true, active: true },
+    });
+
+    if (!user || !user.active) {
+      throw new UnauthorizedException("Sessão inválida ou usuário desativado");
+    }
+
     return {
-      userId: payload.sub,
-      role: payload.role,
-      name: payload.name,
+      userId: user.id,
+      role: user.role,
+      name: user.name,
     };
   }
 }

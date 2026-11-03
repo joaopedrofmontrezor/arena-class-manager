@@ -2,11 +2,19 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { JwtService } from "@nestjs/jwt";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { HttpExceptionFilter } from "../src/common/filters/http-exception.filter";
 import * as bcrypt from "bcrypt";
-import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from "@jest/globals";
 
 const CSRF_COOKIE_NAME = "csrf_token";
 const CSRF_HEADER_NAME = "x-csrf-token";
@@ -34,6 +42,8 @@ describe("Arena Class Manager - E2E", () => {
   const PROF_A_EMAIL = "professorA.e2e@arena-test.com";
   const PROF_B_EMAIL = "professorB.e2e@arena-test.com";
   const SENHA_PROFESSORES = "senhaDoProfessor123";
+
+  const PROF_TEMP_EMAIL = "professorTemp.e2e@arena-test.com";
 
   let profAId: string;
   let profBId: string;
@@ -68,7 +78,11 @@ describe("Arena Class Manager - E2E", () => {
       },
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [OWNER_EMAIL, PROF_A_EMAIL, PROF_B_EMAIL] } },
+      where: {
+        email: {
+          in: [OWNER_EMAIL, PROF_A_EMAIL, PROF_B_EMAIL, PROF_TEMP_EMAIL],
+        },
+      },
     });
 
     await prisma.user.create({
@@ -128,7 +142,11 @@ describe("Arena Class Manager - E2E", () => {
       },
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [OWNER_EMAIL, PROF_A_EMAIL, PROF_B_EMAIL] } },
+      where: {
+        email: {
+          in: [OWNER_EMAIL, PROF_A_EMAIL, PROF_B_EMAIL, PROF_TEMP_EMAIL],
+        },
+      },
     });
     await app.close();
   });
@@ -264,6 +282,82 @@ describe("Arena Class Manager - E2E", () => {
           campoInventado: "não deveria existir",
         })
         .expect(400);
+    });
+  });
+
+  describe("Sessão de usuário desativado ou removido", () => {
+    async function criarProfessorTemporarioComToken() {
+      const user = await prisma.user.create({
+        data: {
+          name: "Professor Temporário E2E",
+          email: PROF_TEMP_EMAIL,
+          password: await bcrypt.hash(SENHA_PROFESSORES, 10),
+          role: "PROFESSOR",
+          active: true,
+        },
+      });
+      const token = app
+        .get(JwtService, { strict: false })
+        .sign({ sub: user.id, role: user.role, name: user.name });
+      return { user, cookie: `token=${token}` };
+    }
+
+    afterEach(async () => {
+      await prisma.user.deleteMany({ where: { email: PROF_TEMP_EMAIL } });
+    });
+
+    it("bloqueia (401) um token ainda válido assim que o Owner desativa o professor", async () => {
+      const { user, cookie } = await criarProfessorTemporarioComToken();
+
+      await request(app.getHttpServer())
+        .get("/auth/me")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/users/${user.id}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoOwner.csrfToken)
+        .send({ active: false })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get("/auth/me")
+        .set("Cookie", cookie)
+        .expect(401);
+    });
+
+    it("volta a aceitar o mesmo token se o Owner reativar o professor", async () => {
+      const { user, cookie } = await criarProfessorTemporarioComToken();
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { active: false },
+      });
+      await request(app.getHttpServer())
+        .get("/auth/me")
+        .set("Cookie", cookie)
+        .expect(401);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { active: true },
+      });
+      await request(app.getHttpServer())
+        .get("/auth/me")
+        .set("Cookie", cookie)
+        .expect(200);
+    });
+
+    it("bloqueia (401) o token de um usuário que foi removido do banco", async () => {
+      const { user, cookie } = await criarProfessorTemporarioComToken();
+
+      await prisma.user.delete({ where: { id: user.id } });
+
+      await request(app.getHttpServer())
+        .get("/auth/me")
+        .set("Cookie", cookie)
+        .expect(401);
     });
   });
 
