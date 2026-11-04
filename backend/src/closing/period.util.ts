@@ -31,13 +31,17 @@ function dataCalendario(
   return new Date(Date.UTC(ano, mes, dia, h, m, s, ms));
 }
 
-function hojeEmSaoPaulo(): { ano: number; mes: number; dia: number } {
+function hojeEmSaoPaulo(agora: Date = new Date()): {
+  ano: number;
+  mes: number;
+  dia: number;
+} {
   const partes = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(agora);
 
   const valor = (tipo: string) =>
     Number(partes.find((p) => p.type === tipo)!.value);
@@ -71,4 +75,19 @@ export function getPeriodoAtual(referencia?: Date): Periodo {
     end: dataCalendario(ano, mes, ultimoDia, 23, 59, 59, 999),
     label: `16 a ${ultimoDia} de ${nomeMes}`,
   };
+}
+
+
+export function periodoJaEncerrado(
+  periodo: Periodo,
+  agora: Date = new Date(),
+): boolean {
+  const hoje = hojeEmSaoPaulo(agora);
+  const hojeUtc = Date.UTC(hoje.ano, hoje.mes, hoje.dia);
+  const fimUtc = Date.UTC(
+    periodo.end.getUTCFullYear(),
+    periodo.end.getUTCMonth(),
+    periodo.end.getUTCDate(),
+  );
+  return fimUtc < hojeUtc;
 }

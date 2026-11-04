@@ -1,14 +1,20 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { Test } from "@nestjs/testing";
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { LessonsService } from "./lessons.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ClosingPeriodsService } from "../closing/closing-periods.service";
 import { LessonType, Role } from "@prisma/client";
 
 describe("LessonsService", () => {
   let service: LessonsService;
 
   let prisma: any;
+  let closingPeriods: { assertDateOpen: jest.Mock<(...args: any[]) => any> };
 
   const PROFESSOR_ID = "professor-1";
   const AUXILIAR_ID = "professor-2";
@@ -25,8 +31,16 @@ describe("LessonsService", () => {
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
     };
 
+    
+    closingPeriods = { assertDateOpen: jest.fn() };
+    closingPeriods.assertDateOpen.mockResolvedValue(undefined);
+
     const moduleRef = await Test.createTestingModule({
-      providers: [LessonsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        LessonsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ClosingPeriodsService, useValue: closingPeriods },
+      ],
     }).compile();
 
     service = moduleRef.get(LessonsService);
@@ -380,6 +394,145 @@ describe("LessonsService", () => {
       await expect(
         service.remove("lesson-1", "outro-professor", "PROFESSOR"),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("período fechado (trava de edição)", () => {
+    const FECHADO = () =>
+      new ConflictException("O período de 01 a 15 de setembro está fechado.");
+
+    function aulaExistente() {
+      prisma.lesson.findUnique.mockResolvedValue({
+        id: "lesson-1",
+        date: new Date("2026-09-10"),
+        professorId: PROFESSOR_ID,
+        assistantId: null,
+        type: LessonType.TURMA,
+        professorValue: 28,
+      });
+    }
+
+    it("create: consulta a data da aula e NÃO grava se o período está fechado", async () => {
+      closingPeriods.assertDateOpen.mockRejectedValue(FECHADO());
+
+      await expect(
+        service.create(PROFESSOR_ID, {
+          date: "2026-09-10",
+          time: "08:00",
+          type: LessonType.TURMA,
+        } as any),
+      ).rejects.toThrow(ConflictException);
+
+      expect(closingPeriods.assertDateOpen).toHaveBeenCalledWith(
+        new Date("2026-09-10"),
+      );
+      expect(prisma.lesson.create).not.toHaveBeenCalled();
+    });
+
+    it("createBatch: NÃO grava nenhuma aula se o período está fechado", async () => {
+      closingPeriods.assertDateOpen.mockRejectedValue(FECHADO());
+
+      await expect(
+        service.createBatch(PROFESSOR_ID, {
+          date: "2026-09-10",
+          lessons: [{ time: "08:00", type: LessonType.TURMA }],
+        } as any),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.lesson.create).not.toHaveBeenCalled();
+    });
+
+    it("update: bloqueia editar uma aula que já está num período fechado", async () => {
+      aulaExistente();
+      closingPeriods.assertDateOpen.mockRejectedValue(FECHADO());
+
+      await expect(
+        service.update("lesson-1", PROFESSOR_ID, "PROFESSOR", {
+          observation: "tentando mudar depois de fechado",
+        } as any),
+      ).rejects.toThrow(ConflictException);
+
+      expect(closingPeriods.assertDateOpen).toHaveBeenCalledWith(
+        new Date("2026-09-10"),
+      );
+      expect(prisma.lesson.update).not.toHaveBeenCalled();
+    });
+
+    it("update: bloqueia MOVER uma aula de um período aberto para dentro de um fechado", async () => {
+      aulaExistente();
+      closingPeriods.assertDateOpen.mockImplementation(async (d: Date) => {
+        if (d.toISOString().startsWith("2026-08-05")) throw FECHADO();
+      });
+
+      await expect(
+        service.update("lesson-1", PROFESSOR_ID, "PROFESSOR", {
+          date: "2026-08-05",
+        } as any),
+      ).rejects.toThrow(ConflictException);
+
+      expect(closingPeriods.assertDateOpen).toHaveBeenCalledWith(
+        new Date("2026-09-10"),
+      );
+      expect(closingPeriods.assertDateOpen).toHaveBeenCalledWith(
+        new Date("2026-08-05"),
+      );
+      expect(prisma.lesson.update).not.toHaveBeenCalled();
+    });
+
+    it("update: o OWNER também é bloqueado (precisa reabrir o período)", async () => {
+      aulaExistente();
+      closingPeriods.assertDateOpen.mockRejectedValue(FECHADO());
+
+      await expect(
+        service.update("lesson-1", "owner-id", "OWNER", {
+          observation: "x",
+        } as any),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.lesson.update).not.toHaveBeenCalled();
+    });
+
+    it("update: sem mudar a data, só consulta a data atual da aula", async () => {
+      aulaExistente();
+
+      await service.update("lesson-1", PROFESSOR_ID, "PROFESSOR", {
+        observation: "ok",
+      } as any);
+
+      expect(closingPeriods.assertDateOpen).toHaveBeenCalledTimes(1);
+      expect(prisma.lesson.update).toHaveBeenCalled();
+    });
+
+    it("update: quem não é dono recebe 403 antes de qualquer consulta ao período", async () => {
+      aulaExistente();
+
+      await expect(
+        service.update("lesson-1", "outro-professor", "PROFESSOR", {
+          observation: "x",
+        } as any),
+      ).rejects.toThrow(ForbiddenException);
+      expect(closingPeriods.assertDateOpen).not.toHaveBeenCalled();
+    });
+
+    it("remove: bloqueia excluir uma aula de período fechado", async () => {
+      aulaExistente();
+      closingPeriods.assertDateOpen.mockRejectedValue(FECHADO());
+
+      await expect(
+        service.remove("lesson-1", PROFESSOR_ID, "PROFESSOR"),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prisma.lesson.delete).not.toHaveBeenCalled();
+    });
+
+    it("remove: exclui normalmente quando o período está aberto", async () => {
+      aulaExistente();
+
+      await service.remove("lesson-1", PROFESSOR_ID, "PROFESSOR");
+
+      expect(prisma.lesson.delete).toHaveBeenCalledWith({
+        where: { id: "lesson-1" },
+      });
     });
   });
 });

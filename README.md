@@ -136,6 +136,28 @@ qualquer momento em Actions → "Backup do banco de produção" → **Run
 workflow**. Requer o secret `BACKUP_DATABASE_URL` configurado no
 repositório (a `DIRECT_URL` do Neon).
 
+## Fechamento de períodos e pagamentos
+
+O mês é dividido em duas quinzenas (01–15 e 16–fim). Depois que uma
+quinzena termina, o **Owner** pode **fechá-la** em *Fechamento geral*:
+
+- Enquanto estiver fechada, **ninguém** (nem o Owner) consegue criar, editar,
+  mover ou excluir aulas com data dentro dela. Tentar devolve `409`.
+- Com o período fechado, o Owner marca cada professor como **pago**. O valor é
+  gravado no momento do pagamento (fotografia do total a receber).
+- O professor vê, no próprio fechamento, se o período está fechado e se já foi
+  pago.
+- Para corrigir algo, o Owner desfaz os pagamentos e **reabre** o período. Um
+  período com pagamento registrado não pode ser reaberto.
+- Só é possível fechar depois que o último dia da quinzena passou (data de São
+  Paulo) e apenas quinzenas inteiras (início no dia 1 ou 16).
+
+Endpoints (todos só para `OWNER`): `POST /closing/periods` (`{ "start":
+"YYYY-MM-DD" }`), `DELETE /closing/periods/:id`,
+`POST|DELETE /closing/periods/:id/payments/:professorId`. As respostas de
+`GET /closing/general`, `/closing/me` e `/closing/professor/:id` ganham o campo
+`fechamento` (e `pago`/`pagoEm`/`valorPago` por professor).
+
 ## Deploy
 
 - **Backend**: Render (Web Service, Docker), a partir do
@@ -151,6 +173,12 @@ repositório (a `DIRECT_URL` do Neon).
   qualquer mudança nela exige um novo deploy (Redeploy) na Vercel.
 - **Banco**: Neon (Postgres gerenciado), com `DATABASE_URL` (pooled) para
   runtime e `DIRECT_URL` para migrations.
+
+> **Ordem importa quando há migration nova:** rode `npx prisma migrate deploy`
+> contra o banco de produção **antes** de fazer o merge/deploy do código que
+> depende dela. Migrations aditivas (novas tabelas/colunas) são seguras de
+> aplicar antes, pois a versão antiga da API simplesmente as ignora. Na ordem
+> inversa, a API nova consultaria tabelas que ainda não existem e daria erro.
 
 Migrations em produção são aplicadas manualmente (`npx prisma migrate
 deploy`), nunca automaticamente no boot da aplicação — para que alguém
