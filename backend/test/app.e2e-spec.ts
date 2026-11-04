@@ -45,6 +45,17 @@ describe("Arena Class Manager - E2E", () => {
 
   const PROF_TEMP_EMAIL = "professorTemp.e2e@arena-test.com";
 
+  // Pagamentos e fechamentos referenciam usuários com ON DELETE RESTRICT,
+  // então precisam sair antes dos usuários de teste.
+  async function limparFechamentosDeTeste() {
+    await prisma.closingPayment.deleteMany({
+      where: { closedPeriod: { closedBy: { email: OWNER_EMAIL } } },
+    });
+    await prisma.closedPeriod.deleteMany({
+      where: { closedBy: { email: OWNER_EMAIL } },
+    });
+  }
+
   let profAId: string;
   let profBId: string;
   let lessonDoProfessorAId: string;
@@ -72,6 +83,7 @@ describe("Arena Class Manager - E2E", () => {
 
     prisma = app.get(PrismaService);
 
+    await limparFechamentosDeTeste();
     await prisma.lesson.deleteMany({
       where: {
         professor: { email: { in: [PROF_A_EMAIL, PROF_B_EMAIL] } },
@@ -136,6 +148,7 @@ describe("Arena Class Manager - E2E", () => {
   });
 
   afterAll(async () => {
+    await limparFechamentosDeTeste();
     await prisma.lesson.deleteMany({
       where: {
         professor: { email: { in: [PROF_A_EMAIL, PROF_B_EMAIL] } },
@@ -358,6 +371,233 @@ describe("Arena Class Manager - E2E", () => {
         .get("/auth/me")
         .set("Cookie", cookie)
         .expect(401);
+    });
+  });
+
+  describe("Fechamento de período (trava de edição e pagamento)", () => {
+    // Quinzena já encerrada e exclusiva deste bloco de testes.
+    const INICIO = "2026-08-01";
+    const FIM = "2026-08-15";
+    const DIA_DENTRO = "2026-08-05";
+    const OUTRO_DIA_DENTRO = "2026-08-10";
+    const DIA_PERIODO_VIZINHO = "2026-08-16";
+
+    let aulaNoPeriodoId: string;
+    let periodoFechadoId: string;
+
+    const comoOwner = (t: request.Test) =>
+      t
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoOwner.csrfToken);
+    const comoProfA = (t: request.Test) =>
+      t
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoProfA.csrfToken);
+
+    const queryPeriodo = `start=${INICIO}&end=${FIM}`;
+
+    it("o professor consegue lançar uma aula enquanto o período está aberto (201)", async () => {
+      const res = await comoProfA(
+        request(app.getHttpServer()).post("/lessons"),
+      )
+        .send({ date: DIA_DENTRO, time: "09:00", type: "TURMA" })
+        .expect(201);
+      aulaNoPeriodoId = res.body.id;
+    });
+
+    it("um PROFESSOR não pode fechar período (403)", async () => {
+      await comoProfA(request(app.getHttpServer()).post("/closing/periods"))
+        .send({ start: INICIO })
+        .expect(403);
+    });
+
+    it("recusa um início que não seja dia 1 ou 16 (400)", async () => {
+      await comoOwner(request(app.getHttpServer()).post("/closing/periods"))
+        .send({ start: "2026-08-05" })
+        .expect(400);
+    });
+
+    it("recusa fechar um período que ainda não terminou (400)", async () => {
+      await comoOwner(request(app.getHttpServer()).post("/closing/periods"))
+        .send({ start: "2099-01-01" })
+        .expect(400);
+    });
+
+    it("o OWNER fecha o período (201)", async () => {
+      const res = await comoOwner(
+        request(app.getHttpServer()).post("/closing/periods"),
+      )
+        .send({ start: INICIO })
+        .expect(201);
+      periodoFechadoId = res.body.id;
+      expect(res.body.label).toBe("01 a 15 de agosto");
+    });
+
+    it("fechar o mesmo período de novo dá conflito (409)", async () => {
+      await comoOwner(request(app.getHttpServer()).post("/closing/periods"))
+        .send({ start: INICIO })
+        .expect(409);
+    });
+
+    it("bloqueia (409) criar uma aula dentro do período fechado", async () => {
+      await comoProfA(request(app.getHttpServer()).post("/lessons"))
+        .send({ date: OUTRO_DIA_DENTRO, time: "10:00", type: "TURMA" })
+        .expect(409);
+    });
+
+    it("bloqueia (409) criar aulas em lote dentro do período fechado", async () => {
+      await comoProfA(request(app.getHttpServer()).post("/lessons/batch"))
+        .send({
+          date: OUTRO_DIA_DENTRO,
+          lessons: [{ time: "10:00", type: "TURMA" }],
+        })
+        .expect(409);
+    });
+
+    it("bloqueia (409) editar uma aula do período fechado, para o professor e para o OWNER", async () => {
+      await comoProfA(
+        request(app.getHttpServer()).patch(`/lessons/${aulaNoPeriodoId}`),
+      )
+        .send({ observation: "mudando depois de fechado" })
+        .expect(409);
+
+      await comoOwner(
+        request(app.getHttpServer()).patch(`/lessons/${aulaNoPeriodoId}`),
+      )
+        .send({ observation: "owner também não pode" })
+        .expect(409);
+    });
+
+    it("bloqueia (409) excluir uma aula do período fechado", async () => {
+      await comoProfA(
+        request(app.getHttpServer()).delete(`/lessons/${aulaNoPeriodoId}`),
+      ).expect(409);
+    });
+
+    it("bloqueia (409) mover uma aula de um período aberto para dentro do fechado", async () => {
+      await comoProfA(
+        request(app.getHttpServer()).patch(`/lessons/${lessonDoProfessorAId}`),
+      )
+        .send({ date: DIA_DENTRO })
+        .expect(409);
+    });
+
+    it("o período vizinho continua aberto (a trava vale só para a quinzena fechada)", async () => {
+      await comoProfA(request(app.getHttpServer()).post("/lessons"))
+        .send({ date: DIA_PERIODO_VIZINHO, time: "09:00", type: "TURMA" })
+        .expect(201);
+    });
+
+    it("o fechamento geral mostra o período como fechado e ninguém pago ainda", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/general?${queryPeriodo}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+
+      expect(res.body.fechamento.id).toBe(periodoFechadoId);
+      const linhaA = res.body.professores.find(
+        (p: { professorId: string }) => p.professorId === profAId,
+      );
+      expect(linhaA.pago).toBe(false);
+      expect(linhaA.totalReceber).toBe(28);
+    });
+
+    it("o professor vê no próprio fechamento que o período está fechado e não pago", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/me?${queryPeriodo}`)
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(200);
+
+      expect(res.body.fechamento.id).toBe(periodoFechadoId);
+      expect(res.body.fechamento.pago).toBe(false);
+    });
+
+    it("um PROFESSOR não pode marcar pagamento (403)", async () => {
+      await comoProfA(
+        request(app.getHttpServer()).post(
+          `/closing/periods/${periodoFechadoId}/payments/${profAId}`,
+        ),
+      ).expect(403);
+    });
+
+    it("recusa marcar como pago um professor sem valor a receber no período (400)", async () => {
+      await comoOwner(
+        request(app.getHttpServer()).post(
+          `/closing/periods/${periodoFechadoId}/payments/${profBId}`,
+        ),
+      ).expect(400);
+    });
+
+    it("o OWNER marca o professor como pago e o valor fica registrado (201)", async () => {
+      const res = await comoOwner(
+        request(app.getHttpServer()).post(
+          `/closing/periods/${periodoFechadoId}/payments/${profAId}`,
+        ),
+      ).expect(201);
+
+      expect(Number(res.body.amount)).toBe(28);
+    });
+
+    it("marcar o mesmo professor como pago de novo dá conflito (409)", async () => {
+      await comoOwner(
+        request(app.getHttpServer()).post(
+          `/closing/periods/${periodoFechadoId}/payments/${profAId}`,
+        ),
+      ).expect(409);
+    });
+
+    it("geral e fechamento do professor passam a mostrar o pagamento", async () => {
+      const geral = await request(app.getHttpServer())
+        .get(`/closing/general?${queryPeriodo}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+      const linhaA = geral.body.professores.find(
+        (p: { professorId: string }) => p.professorId === profAId,
+      );
+      expect(linhaA.pago).toBe(true);
+      expect(linhaA.valorPago).toBe(28);
+
+      const meu = await request(app.getHttpServer())
+        .get(`/closing/me?${queryPeriodo}`)
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(200);
+      expect(meu.body.fechamento.pago).toBe(true);
+    });
+
+    it("não deixa reabrir o período enquanto houver pagamento (409)", async () => {
+      await comoOwner(
+        request(app.getHttpServer()).delete(
+          `/closing/periods/${periodoFechadoId}`,
+        ),
+      ).expect(409);
+    });
+
+    it("desfazer o pagamento e depois reabrir o período funciona (200)", async () => {
+      await comoOwner(
+        request(app.getHttpServer()).delete(
+          `/closing/periods/${periodoFechadoId}/payments/${profAId}`,
+        ),
+      ).expect(200);
+
+      await comoOwner(
+        request(app.getHttpServer()).delete(
+          `/closing/periods/${periodoFechadoId}`,
+        ),
+      ).expect(200);
+    });
+
+    it("depois de reaberto, o professor volta a poder editar a aula (200) e o status some", async () => {
+      await comoProfA(
+        request(app.getHttpServer()).patch(`/lessons/${aulaNoPeriodoId}`),
+      )
+        .send({ observation: "editado depois de reabrir" })
+        .expect(200);
+
+      const geral = await request(app.getHttpServer())
+        .get(`/closing/general?${queryPeriodo}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+      expect(geral.body.fechamento).toBeNull();
     });
   });
 

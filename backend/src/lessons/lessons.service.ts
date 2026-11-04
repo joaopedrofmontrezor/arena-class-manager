@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { ClosingPeriodsService } from "../closing/closing-periods.service";
 import { LessonType, Role } from "@prisma/client";
 import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
@@ -13,7 +14,10 @@ import { VALOR_TURMA_PROFESSOR, VALOR_AUXILIAR } from "./lessons.constants";
 
 @Injectable()
 export class LessonsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private closingPeriods: ClosingPeriodsService,
+  ) {}
 
   private resolveProfessorValue(
     type: LessonType,
@@ -63,6 +67,8 @@ export class LessonsService {
   }
 
   async create(professorId: string, dto: CreateLessonDto) {
+    await this.closingPeriods.assertDateOpen(new Date(dto.date));
+
     const assistantId = this.normalizeAssistantId(dto.assistantId);
     await this.assertValidAssistant(assistantId, professorId);
     const professorValue = this.resolveProfessorValue(
@@ -86,6 +92,7 @@ export class LessonsService {
 
   async createBatch(professorId: string, dto: CreateLessonsBatchDto) {
     const date = new Date(dto.date);
+    await this.closingPeriods.assertDateOpen(date);
 
     const rows = dto.lessons.map((item) => ({
       assistantId: this.normalizeAssistantId(item.assistantId),
@@ -159,6 +166,12 @@ export class LessonsService {
     const lesson = await this.findOneOrThrow(lessonId);
     this.assertOwnerOrSelf(lesson.professorId, userId, role);
 
+    
+    await this.closingPeriods.assertDateOpen(lesson.date);
+    if (dto.date) {
+      await this.closingPeriods.assertDateOpen(new Date(dto.date));
+    }
+
     const finalType = dto.type ?? lesson.type;
     const typeChanged = dto.type !== undefined && dto.type !== lesson.type;
 
@@ -199,6 +212,7 @@ export class LessonsService {
   async remove(lessonId: string, userId: string, role: string) {
     const lesson = await this.findOneOrThrow(lessonId);
     this.assertOwnerOrSelf(lesson.professorId, userId, role);
+    await this.closingPeriods.assertDateOpen(lesson.date);
 
     return this.prisma.lesson.delete({ where: { id: lessonId } });
   }

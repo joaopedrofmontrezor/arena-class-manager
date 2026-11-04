@@ -30,6 +30,10 @@ model User {
 
   lessonsAsProfessor Lesson[] @relation("ProfessorLessons")
   lessonsAsAssistant Lesson[] @relation("AssistantLessons")
+
+  closedPeriods    ClosedPeriod[]   @relation("PeriodsClosedBy")
+  paymentsReceived ClosingPayment[] @relation("PaymentsReceived")
+  paymentsMarked   ClosingPayment[] @relation("PaymentsMarked")
 }
 
 model Lesson {
@@ -52,4 +56,36 @@ model Lesson {
   @@index([professorId, date])
   @@index([assistantId, date])
   @@index([date])
+}
+
+// Quinzena fechada: enquanto existir uma linha aqui, nenhuma aula cuja data
+// caia em [periodStart, periodEnd] pode ser criada, editada ou excluída.
+// Para mexer de novo, o Owner precisa reabrir (apagar) o fechamento.
+model ClosedPeriod {
+  id          String   @id @default(uuid())
+  periodStart DateTime @unique @db.Date
+  periodEnd   DateTime @db.Date
+  label       String
+  closedAt    DateTime @default(now())
+  closedById  String
+
+  closedBy User             @relation("PeriodsClosedBy", fields: [closedById], references: [id])
+  payments ClosingPayment[]
+}
+
+// Pagamento de um professor numa quinzena fechada. "amount" é uma fotografia
+// do total a receber no momento em que foi marcado como pago.
+model ClosingPayment {
+  id             String   @id @default(uuid())
+  closedPeriodId String
+  professorId    String
+  amount         Decimal  @db.Decimal(10, 2)
+  paidAt         DateTime @default(now())
+  paidById       String
+
+  closedPeriod ClosedPeriod @relation(fields: [closedPeriodId], references: [id])
+  professor    User         @relation("PaymentsReceived", fields: [professorId], references: [id])
+  paidBy       User         @relation("PaymentsMarked", fields: [paidById], references: [id])
+
+  @@unique([closedPeriodId, professorId])
 }

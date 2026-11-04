@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { getPeriodoAtual } from "./period.util";
+import { getPeriodoAtual, periodoJaEncerrado } from "./period.util";
 
 function dataUtc(ano: number, mes: number, dia: number): Date {
   return new Date(Date.UTC(ano, mes, dia));
@@ -54,5 +54,64 @@ describe("getPeriodoAtual", () => {
 
     expect(p1.start.toISOString()).toBe(p2.start.toISOString());
     expect(p1.end.toISOString()).toBe(p2.end.toISOString());
+  });
+});
+
+describe("periodoJaEncerrado", () => {
+  const primeiraQuinzenaSetembro = getPeriodoAtual(dataUtc(2026, 8, 1));
+
+  it("é falso durante o próprio período", () => {
+    expect(
+      periodoJaEncerrado(
+        primeiraQuinzenaSetembro,
+        new Date("2026-09-10T15:00:00Z"),
+      ),
+    ).toBe(false);
+  });
+
+  it("é falso no último dia do período (ainda dá para lançar aulas)", () => {
+    expect(
+      periodoJaEncerrado(
+        primeiraQuinzenaSetembro,
+        new Date("2026-09-15T15:00:00Z"),
+      ),
+    ).toBe(false);
+  });
+
+  it("é verdadeiro a partir do dia seguinte ao fim", () => {
+    expect(
+      periodoJaEncerrado(
+        primeiraQuinzenaSetembro,
+        new Date("2026-09-16T15:00:00Z"),
+      ),
+    ).toBe(true);
+  });
+
+  it("usa o dia de São Paulo, não o de UTC (02:00Z do dia 16 ainda é dia 15 no Brasil)", () => {
+    expect(
+      periodoJaEncerrado(
+        primeiraQuinzenaSetembro,
+        new Date("2026-09-16T02:00:00Z"),
+      ),
+    ).toBe(false);
+  });
+
+  it("é falso para um período futuro", () => {
+    expect(
+      periodoJaEncerrado(
+        primeiraQuinzenaSetembro,
+        new Date("2026-08-01T12:00:00Z"),
+      ),
+    ).toBe(false);
+  });
+
+  it("funciona na virada de ano (16 a 31 de dezembro encerra em janeiro)", () => {
+    const dezembro = getPeriodoAtual(dataUtc(2026, 11, 20));
+    expect(periodoJaEncerrado(dezembro, new Date("2026-12-31T15:00:00Z"))).toBe(
+      false,
+    );
+    expect(periodoJaEncerrado(dezembro, new Date("2027-01-01T15:00:00Z"))).toBe(
+      true,
+    );
   });
 });
