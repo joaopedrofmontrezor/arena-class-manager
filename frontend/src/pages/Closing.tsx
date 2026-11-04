@@ -20,6 +20,13 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
 
+
+function formatEventDate(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
 export function Closing() {
   const [periodo, setPeriodo] = useState<Periodo>(getPeriodoAtual());
   const [resumo, setResumo] = useState<ResumoProfessor | null>(null);
@@ -88,6 +95,28 @@ export function Closing() {
 
       {!loading && !error && resumo && (
         <>
+          {resumo.fechamento && (
+            <div
+              className={`rounded-card px-4 py-3 mb-3 text-sm ${
+                resumo.fechamento.pago ? "bg-sea-light text-sea" : "bg-surface"
+              }`}
+            >
+              {resumo.fechamento.pago ? (
+                <p className="font-medium">
+                  Pago em{" "}
+                  {resumo.fechamento.pagoEm
+                    ? formatEventDate(resumo.fechamento.pagoEm)
+                    : "—"}{" "}
+                  · {formatBRL(resumo.fechamento.valorPago ?? 0)}
+                </p>
+              ) : (
+                <p className="text-ink-soft">
+                  🔒 Período fechado. Aguardando pagamento.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="bg-teal text-white rounded-card p-5 mb-6">
             <p className="text-white/70 text-sm mb-1">Total do professor</p>
             <p className="font-display font-semibold text-4xl">

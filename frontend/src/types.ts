@@ -28,6 +28,19 @@ export interface Periodo {
   label: string;
 }
 
+export interface FechamentoGeral {
+  id: string;
+  fechadoEm: string;
+}
+
+export interface FechamentoProfessor {
+  id: string;
+  fechadoEm: string;
+  pago: boolean;
+  pagoEm: string | null;
+  valorPago: number | null;
+}
+
 export interface ResumoProfessor {
   periodo: Periodo;
   totalTurmas: number;
@@ -37,6 +50,7 @@ export interface ResumoProfessor {
   totalReceber: number;
   aulas: Lesson[];
   aulasComoAuxiliar: (Lesson & { professor: { name: string } })[];
+  fechamento: FechamentoProfessor | null;
 }
 
 export interface ResumoGeralItem {
@@ -47,6 +61,9 @@ export interface ResumoGeralItem {
   valorAulas: number;
   valorComoAuxiliar: number;
   totalReceber: number;
+  pago: boolean;
+  pagoEm: string | null;
+  valorPago: number | null;
 }
 
 export interface ResumoGeral {
@@ -55,4 +72,5 @@ export interface ResumoGeral {
   totalGeralProfessor: number;
   totalGeralAuxiliares: number;
   totalGeral: number;
+  fechamento: FechamentoGeral | null;
 }
