@@ -24,7 +24,8 @@ async function main() {
   );
 
   const name = await ask("Nome do dono da arena: ");
-  const email = await ask("E-mail de login: ");
+
+  const email = (await ask("E-mail de login: ")).trim().toLowerCase();
   const password = await ask("Senha (minimo 6 caracteres): ");
 
   if (password.length < 6) {
@@ -32,8 +33,9 @@ async function main() {
     process.exit(1);
   }
 
-  const existente = await prisma.user.findUnique({ where: { email } });
-  if (existente) {
+  const existente = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "User" WHERE lower("email") = ${email} LIMIT 1`;
+  if (existente.length > 0) {
     console.error(`Ja existe um usuario com o e-mail ${email}. Abortando.`);
     process.exit(1);
   }
