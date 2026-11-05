@@ -142,7 +142,9 @@ describe("Arena Class Manager - E2E", () => {
     });
     lessonDoProfessorAId = aula.id;
 
-    sessaoOwner = await login(OWNER_EMAIL, OWNER_SENHA);
+    // De propósito: maiúsculas e espaços nas pontas. Toda a suíte passa a
+    // depender de o login ignorar a caixa do e-mail.
+    sessaoOwner = await login(` ${OWNER_EMAIL.toUpperCase()} `, OWNER_SENHA);
     sessaoProfA = await login(PROF_A_EMAIL, SENHA_PROFESSORES);
     sessaoProfB = await login(PROF_B_EMAIL, SENHA_PROFESSORES);
   });
@@ -204,6 +206,101 @@ describe("Arena Class Manager - E2E", () => {
 
     it("realiza login com sucesso e retorna os cookies de sessão e CSRF", async () => {
       expect(sessaoOwner.csrfToken.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("E-mail sem diferenciar maiúsculas/minúsculas", () => {
+    const NOVO_EMAIL = "Maiuscula.E2E@Arena-Test.com";
+    const NOVO_EMAIL_NORMALIZADO = NOVO_EMAIL.toLowerCase();
+    // Conta "antiga", gravada direto no banco com maiúsculas.
+    const LEGADO_EMAIL = "Legado.E2E@Arena-Test.com";
+    // Par de e-mails que só diferem no "_" (que vira curinga em ILIKE).
+    const PARECIDO_EMAIL = "wildxe2e@arena-test.com";
+    const COM_UNDERSCORE_EMAIL = "wild_e2e@arena-test.com";
+    const SENHA = "senhaDoLegado123";
+
+    const limpar = () =>
+      prisma.user.deleteMany({
+        where: {
+          email: {
+            in: [
+              NOVO_EMAIL_NORMALIZADO,
+              LEGADO_EMAIL,
+              PARECIDO_EMAIL,
+              COM_UNDERSCORE_EMAIL,
+            ],
+          },
+        },
+      });
+
+    beforeAll(limpar);
+    afterAll(limpar);
+
+    const cadastrar = (email: string) =>
+      request(app.getHttpServer())
+        .post("/users")
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoOwner.csrfToken)
+        .send({
+          name: "Teste E-mail",
+          email,
+          password: SENHA,
+          role: "PROFESSOR",
+        });
+
+    it("o cadastro grava o e-mail em minúsculas e sem espaços (201)", async () => {
+      const res = await cadastrar(` ${NOVO_EMAIL} `).expect(201);
+
+      expect(res.body.email).toBe(NOVO_EMAIL_NORMALIZADO);
+      const noBanco = await prisma.user.findFirst({
+        where: { email: NOVO_EMAIL_NORMALIZADO },
+      });
+      expect(noBanco).not.toBeNull();
+    });
+
+    it("cadastrar o mesmo e-mail com outra caixa é conflito (409)", async () => {
+      await cadastrar(NOVO_EMAIL.toUpperCase()).expect(409);
+    });
+
+    it("uma conta antiga gravada com maiúsculas continua entrando com o e-mail em minúsculas", async () => {
+      await prisma.user.create({
+        data: {
+          name: "Conta Legada E2E",
+          email: LEGADO_EMAIL,
+          password: await bcrypt.hash(SENHA, 10),
+          role: "PROFESSOR",
+          active: true,
+        },
+      });
+
+      // Atenção ao limite do login (5/min por IP): os logins do beforeAll (3),
+      // o teste de senha incorreta (1) e este (1) usam o orçamento todo. Se
+      // outro teste passar a chamar /auth/login, este grupo precisa ser revisto.
+      await login(LEGADO_EMAIL.toLowerCase(), SENHA);
+    });
+
+    it("não deixa criar duplicata de uma conta antiga só trocando a caixa (409)", async () => {
+      await cadastrar(LEGADO_EMAIL.toLowerCase()).expect(409);
+    });
+
+    it("'_' no e-mail é caractere comum, não curinga: não acusa duplicata de um e-mail parecido", async () => {
+      // Se a busca fosse ILIKE, "wild_e2e@..." casaria com "wildxe2e@..." e o
+      // cadastro viria 409 sem motivo.
+      await prisma.user.create({
+        data: {
+          name: "Parecido E2E",
+          email: PARECIDO_EMAIL,
+          password: await bcrypt.hash(SENHA, 10),
+          role: "PROFESSOR",
+          active: true,
+        },
+      });
+
+      await cadastrar(COM_UNDERSCORE_EMAIL).expect(201);
+    });
+
+    it("e o mesmo e-mail com '_' repetido, aí sim, é duplicata (409)", async () => {
+      await cadastrar(COM_UNDERSCORE_EMAIL.toUpperCase()).expect(409);
     });
   });
 
@@ -375,7 +472,6 @@ describe("Arena Class Manager - E2E", () => {
   });
 
   describe("Fechamento de período (trava de edição e pagamento)", () => {
-    // Quinzena já encerrada e exclusiva deste bloco de testes.
     const INICIO = "2026-08-01";
     const FIM = "2026-08-15";
     const DIA_DENTRO = "2026-08-05";
@@ -397,9 +493,7 @@ describe("Arena Class Manager - E2E", () => {
     const queryPeriodo = `start=${INICIO}&end=${FIM}`;
 
     it("o professor consegue lançar uma aula enquanto o período está aberto (201)", async () => {
-      const res = await comoProfA(
-        request(app.getHttpServer()).post("/lessons"),
-      )
+      const res = await comoProfA(request(app.getHttpServer()).post("/lessons"))
         .send({ date: DIA_DENTRO, time: "09:00", type: "TURMA" })
         .expect(201);
       aulaNoPeriodoId = res.body.id;

@@ -33,11 +33,13 @@ describe("AuthService", () => {
     hashSenhaCorreta = await bcrypt.hash(SENHA_PLANA, 10);
   });
 
+  function dbRetorna(usuario: unknown) {
+    prisma.$queryRaw.mockResolvedValue(usuario ? [usuario] : []);
+  }
+
   beforeEach(async () => {
     prisma = {
-      user: {
-        findUnique: jest.fn(),
-      },
+      $queryRaw: jest.fn(),
     };
     jwt = {
       sign: jest.fn().mockReturnValue("token.jwt.assinado"),
@@ -55,7 +57,7 @@ describe("AuthService", () => {
   });
 
   it("realiza login com sucesso quando email e senha estão corretos", async () => {
-    prisma.user.findUnique.mockResolvedValue({
+    dbRetorna({
       ...usuarioBase,
       password: hashSenhaCorreta,
     });
@@ -77,7 +79,7 @@ describe("AuthService", () => {
   });
 
   it("nunca inclui o hash da senha no retorno do login", async () => {
-    prisma.user.findUnique.mockResolvedValue({
+    dbRetorna({
       ...usuarioBase,
       password: hashSenhaCorreta,
     });
@@ -88,7 +90,7 @@ describe("AuthService", () => {
   });
 
   it("rejeita login com senha incorreta", async () => {
-    prisma.user.findUnique.mockResolvedValue({
+    dbRetorna({
       ...usuarioBase,
       password: hashSenhaCorreta,
     });
@@ -100,7 +102,7 @@ describe("AuthService", () => {
   });
 
   it("rejeita login para usuário inexistente", async () => {
-    prisma.user.findUnique.mockResolvedValue(null);
+    dbRetorna(null);
 
     await expect(
       service.login("ninguem@arena.com", SENHA_PLANA),
@@ -109,7 +111,7 @@ describe("AuthService", () => {
   });
 
   it("rejeita login para usuário inativo, mesmo com a senha correta", async () => {
-    prisma.user.findUnique.mockResolvedValue({
+    dbRetorna({
       ...usuarioBase,
       active: false,
       password: hashSenhaCorreta,
@@ -122,7 +124,7 @@ describe("AuthService", () => {
   });
 
   it("usa a mesma mensagem de erro para usuário inexistente e senha errada (não revela qual campo falhou)", async () => {
-    prisma.user.findUnique.mockResolvedValue(null);
+    dbRetorna(null);
     let erroUsuarioInexistente: string | undefined;
     try {
       await service.login("ninguem@arena.com", SENHA_PLANA);
@@ -130,7 +132,7 @@ describe("AuthService", () => {
       erroUsuarioInexistente = (e as UnauthorizedException).message;
     }
 
-    prisma.user.findUnique.mockResolvedValue({
+    dbRetorna({
       ...usuarioBase,
       password: hashSenhaCorreta,
     });
@@ -142,5 +144,52 @@ describe("AuthService", () => {
     }
 
     expect(erroUsuarioInexistente).toBe(erroSenhaErrada);
+  });
+
+  describe("e-mail sem diferenciar maiúsculas/minúsculas", () => {
+    it("busca pelo e-mail normalizado (minúsculas, sem espaços) comparando com lower(email)", async () => {
+      dbRetorna({ ...usuarioBase, password: hashSenhaCorreta });
+
+      await service.login("  Professor@ARENA.com ", SENHA_PLANA);
+
+      const [partes, ...valores] = prisma.$queryRaw.mock.calls[0];
+      expect(partes.join("?")).toContain('lower("email") = ?');
+      expect(valores).toEqual(["professor@arena.com"]);
+    });
+
+    it("entra normalmente mesmo digitando o e-mail todo em maiúsculas", async () => {
+      dbRetorna({
+        ...usuarioBase,
+        password: hashSenhaCorreta,
+      });
+
+      const result = await service.login("PROFESSOR@ARENA.COM", SENHA_PLANA);
+
+      expect(result.accessToken).toBe("token.jwt.assinado");
+    });
+
+    it("conta antiga gravada com maiúsculas continua conseguindo entrar", async () => {
+      dbRetorna({
+        ...usuarioBase,
+        email: "Professor@Arena.com",
+        password: hashSenhaCorreta,
+      });
+
+      const result = await service.login("professor@arena.com", SENHA_PLANA);
+
+      expect(result.user.email).toBe("Professor@Arena.com");
+    });
+
+    it("não troca de usuário: senha errada continua sendo recusada com e-mail em outra caixa", async () => {
+      dbRetorna({
+        ...usuarioBase,
+        password: hashSenhaCorreta,
+      });
+
+      await expect(
+        service.login("PROFESSOR@arena.com", "senha-errada"),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
   });
 });

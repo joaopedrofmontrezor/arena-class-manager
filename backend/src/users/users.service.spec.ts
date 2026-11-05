@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
@@ -13,6 +13,7 @@ describe("UsersService", () => {
 
   beforeEach(async () => {
     prisma = {
+      $queryRaw: jest.fn(),
       user: {
         findUnique: jest.fn(),
         create: jest.fn(),
@@ -25,6 +26,71 @@ describe("UsersService", () => {
     }).compile();
 
     service = moduleRef.get(UsersService);
+  });
+
+  describe("create", () => {
+    const dtoBase = {
+      name: "Ana",
+      email: "Ana.Silva@Arena.COM",
+      password: "senha123",
+      role: "PROFESSOR",
+    } as any;
+
+    function criadoRetorna(extra: Record<string, unknown> = {}) {
+      prisma.user.create.mockImplementation(async ({ data }: any) => ({
+        id: "novo-1",
+        active: true,
+        ...data,
+        ...extra,
+      }));
+    }
+
+    it("grava o e-mail em minúsculas e sem espaços nas pontas", async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      criadoRetorna();
+
+      const user = await service.create({
+        ...dtoBase,
+        email: "  Ana.Silva@Arena.COM ",
+      });
+
+      expect(prisma.user.create.mock.calls[0][0].data.email).toBe(
+        "ana.silva@arena.com",
+      );
+      expect(user.email).toBe("ana.silva@arena.com");
+    });
+
+    it("verifica duplicidade pelo e-mail normalizado, comparando com lower(email)", async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      criadoRetorna();
+
+      await service.create(dtoBase);
+
+      const [partes, ...valores] = prisma.$queryRaw.mock.calls[0];
+      expect(partes.join("?")).toContain('lower("email") = ?');
+      expect(valores).toEqual(["ana.silva@arena.com"]);
+    });
+
+    it("409 se já existe o mesmo e-mail com outra caixa (ex.: cadastrado como Ana@x.com)", async () => {
+      prisma.$queryRaw.mockResolvedValue([{ id: "existente" }]);
+
+      await expect(service.create(dtoBase)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it("guarda a senha como hash e nunca a devolve", async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      criadoRetorna();
+
+      const user = await service.create(dtoBase);
+
+      const gravada = prisma.user.create.mock.calls[0][0].data.password;
+      expect(gravada).not.toBe("senha123");
+      expect(gravada).toMatch(/^\$2[aby]\$/);
+      expect(user).not.toHaveProperty("password");
+    });
   });
 
   describe("update", () => {
