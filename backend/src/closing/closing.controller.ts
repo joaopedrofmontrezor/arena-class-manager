@@ -11,6 +11,7 @@ import {
 import { AuthGuard } from "@nestjs/passport";
 import { ClosingService } from "./closing.service";
 import { ClosingPeriodsService } from "./closing-periods.service";
+import { ClosingExportService } from "./closing-export.service";
 import { ClosePeriodDto } from "./dto/close-period.dto";
 import {
   CurrentUser,
@@ -27,6 +28,7 @@ export class ClosingController {
   constructor(
     private closingService: ClosingService,
     private closingPeriods: ClosingPeriodsService,
+    private closingExport: ClosingExportService,
   ) {}
 
   @Get("me")
@@ -61,6 +63,39 @@ export class ClosingController {
     const periodo = this.resolvePeriodo(query);
     const resumo = await this.closingService.getResumoProfessor(id, periodo);
     return this.closingPeriods.withStatusProfessor(resumo, id);
+  }
+
+  @Get("me/export")
+  async exportMine(
+    @CurrentUser() user: CurrentUserData,
+    @Query() query: PeriodoQueryDto,
+  ) {
+    const periodo = this.resolvePeriodo(query);
+    const texto = await this.closingExport.textoProfessor(
+      user.userId,
+      user.name,
+      periodo,
+    );
+    return { texto };
+  }
+
+  @Get("general/export")
+  @UseGuards(RolesGuard)
+  @Roles("OWNER")
+  async exportGeneral(@Query() query: PeriodoQueryDto) {
+    const periodo = this.resolvePeriodo(query);
+    return { texto: await this.closingExport.textoGeral(periodo) };
+  }
+
+  @Get("professor/:id/export")
+  @UseGuards(RolesGuard)
+  @Roles("OWNER")
+  async exportProfessor(
+    @Param("id") id: string,
+    @Query() query: PeriodoQueryDto,
+  ) {
+    const periodo = this.resolvePeriodo(query);
+    return { texto: await this.closingExport.textoProfessorPorId(id, periodo) };
   }
 
   @Post("periods")

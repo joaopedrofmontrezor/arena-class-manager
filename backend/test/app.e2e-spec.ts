@@ -695,6 +695,95 @@ describe("Arena Class Manager - E2E", () => {
     });
   });
 
+  describe("Exportação do fechamento em texto (WhatsApp)", () => {
+    // A aula criada no beforeAll: 10/09/2026, TURMA, Professor A (R$ 28,00)
+    // com o Professor B como auxiliar (R$ 10,50).
+    const QUERY = "start=2026-09-01&end=2026-09-15";
+
+    it("exige login nas três rotas (401)", async () => {
+      for (const rota of [
+        "/closing/me/export",
+        "/closing/general/export",
+        `/closing/professor/${profAId}/export`,
+      ]) {
+        await request(app.getHttpServer()).get(`${rota}?${QUERY}`).expect(401);
+      }
+    });
+
+    it("o professor exporta o PRÓPRIO fechamento, com a aula e o auxiliar", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/me/export?${QUERY}`)
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(200);
+
+      const texto: string = res.body.texto;
+      expect(texto).toContain("*Fechamento — Professor A E2E*");
+      expect(texto).toContain("Período: 01 a 15 de setembro de 2026");
+      expect(texto).toContain("*Total a receber: R$ 28,00*");
+      expect(texto).toContain(
+        "• 10/09 18:00 · Turma · R$ 28,00 · aux.: Professor B E2E",
+      );
+    });
+
+    it("o auxiliar vê a aula na seção 'Como auxiliar', com o nome do professor", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/me/export?${QUERY}`)
+        .set("Cookie", sessaoProfB.cookieHeader)
+        .expect(200);
+
+      const texto: string = res.body.texto;
+      expect(texto).toContain("*Fechamento — Professor B E2E*");
+      expect(texto).toContain("*Como auxiliar* — R$ 10,50");
+      expect(texto).toContain("prof.: Professor A E2E");
+      expect(texto).not.toContain("Como professor");
+    });
+
+    it("o professor NÃO exporta o fechamento geral nem o de outro professor (403)", async () => {
+      await request(app.getHttpServer())
+        .get(`/closing/general/export?${QUERY}`)
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/closing/professor/${profBId}/export?${QUERY}`)
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(403);
+    });
+
+    it("o OWNER exporta o fechamento geral com os dois professores e os totais", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/general/export?${QUERY}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+
+      const texto: string = res.body.texto;
+      expect(texto).toContain("*Fechamento geral*");
+      expect(texto).toContain("*Professor A E2E* — *R$ 28,00*");
+      expect(texto).toContain("*Professor B E2E* — *R$ 10,50*");
+      expect(texto).toContain("Total geral: *R$ 38,50*");
+    });
+
+    it("o OWNER exporta o fechamento de um professor específico; id inexistente dá 404", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/closing/professor/${profAId}/export?${QUERY}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+      expect(res.body.texto).toContain("*Fechamento — Professor A E2E*");
+
+      await request(app.getHttpServer())
+        .get(`/closing/professor/id-que-nao-existe/export?${QUERY}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(404);
+    });
+
+    it("período incompleto (só start) é recusado (400)", async () => {
+      await request(app.getHttpServer())
+        .get("/closing/general/export?start=2026-09-01")
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(400);
+    });
+  });
+
   describe("Rate limiting no login (proteção contra brute-force)", () => {
     it("retorna 429 após exceder o limite de tentativas de login (5/min)", async () => {
       const LIMITE = 5;

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/client";
 import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
+import { ExportarWhatsApp } from "../components/ExportarWhatsApp";
 import { ResumoProfessor } from "../types";
 import {
   getPeriodoAtual,
@@ -123,6 +124,12 @@ export function Closing() {
               {formatBRL(resumo.totalReceber)}
             </p>
           </div>
+
+          <ExportarWhatsApp
+            rota="/closing/me/export"
+            periodo={periodo}
+            className="mb-6"
+          />
 
           <div className="grid grid-cols-2 gap-3 mb-6">
             <div className="bg-surface rounded-card p-4">

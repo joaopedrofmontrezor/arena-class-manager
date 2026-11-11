@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { getErrorMessage } from '../api/errors';
 import { Layout } from '../components/Layout';
+import { ExportarWhatsApp } from '../components/ExportarWhatsApp';
 import { Modal } from '../components/Modal';
 import { EditLessonModal } from '../components/EditLessonModal';
 import { Lesson, ResumoGeral, ResumoGeralItem, ResumoProfessor } from '../types';
@@ -237,6 +238,14 @@ export function GeneralClosing() {
             <p className="font-display font-semibold text-4xl">{formatBRL(resumo.totalGeral)}</p>
           </div>
 
+          <ExportarWhatsApp
+            rota="/closing/general/export"
+            periodo={periodo}
+            rotulo="Exportar fechamento geral"
+            titulo="Fechamento geral"
+            className="mb-3"
+          />
+
           <div className="grid grid-cols-2 gap-3 mb-6">
             <div className="bg-surface rounded-card p-4">
               <p className="text-ink-soft text-xs mb-1">Total professores</p>
@@ -323,6 +332,14 @@ export function GeneralClosing() {
               )}
             </div>
           )}
+
+          <ExportarWhatsApp
+            rota={`/closing/professor/${itemAtual.professorId}/export`}
+            periodo={periodo}
+            rotulo="Enviar fechamento deste professor"
+            titulo={`Fechamento — ${itemAtual.nome}`}
+            className="mb-5"
+          />
 
           {!detalheLoading && detalhe && (
             <>
