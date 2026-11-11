@@ -1,4 +1,5 @@
 import axios from "axios";
+import { requisicaoFinalizada, requisicaoIniciada } from "./serverWake";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:3000",
@@ -32,6 +33,7 @@ export function setCsrfToken(token: string | null): void {
 }
 
 api.interceptors.request.use((config) => {
+  requisicaoIniciada();
   const method = (config.method || "get").toLowerCase();
 
   if (accessToken) {
@@ -48,5 +50,16 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => {
+    requisicaoFinalizada();
+    return response;
+  },
+  (error) => {
+    requisicaoFinalizada();
+    return Promise.reject(error);
+  },
+);
 
 export default api;

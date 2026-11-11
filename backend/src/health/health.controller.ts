@@ -8,6 +8,11 @@ import { PrismaService } from "../prisma/prisma.service";
 export class HealthController {
   constructor(private prisma: PrismaService) {}
 
+  @Get("live")
+  live() {
+    return { status: "ok" };
+  }
+
   @Get()
   async check(@Res({ passthrough: true }) res: Response) {
     try {

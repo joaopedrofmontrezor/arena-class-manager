@@ -43,4 +43,9 @@ describe("HealthController", () => {
     expect(res.status).toHaveBeenCalledWith(503);
     expect(result).toEqual({ status: "error", database: "down" });
   });
+
+  it("/health/live responde ok sem consultar o banco", () => {
+    expect(controller.live()).toEqual({ status: "ok" });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
 });
