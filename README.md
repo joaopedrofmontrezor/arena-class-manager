@@ -165,7 +165,11 @@ Endpoints (todos só para `OWNER`): `POST /closing/periods` (`{ "start":
   `/health`). Variáveis de ambiente configuradas no painel do Render
   (mesmas da tabela acima; `PORT` é definida pelo próprio Render). No plano
   Free o serviço "dorme" após 15 min sem tráfego e o primeiro acesso
-  seguinte leva cerca de 1 min; um plano pago elimina isso. Como o
+  seguinte leva cerca de 1 min; o frontend mostra o aviso "Acordando o
+  servidor…" enquanto isso. Para evitar a espera, um monitor externo gratuito
+  (ex.: UptimeRobot, tipo HTTP) pode chamar `GET /health/live` a cada 10 min
+  (não consulta o banco, então não gasta as horas do Neon); um plano pago
+  também elimina isso. Como o
   Dockerfile é portátil, trocar de hospedagem só exige recriar as variáveis
   de ambiente e atualizar `VITE_API_URL` no frontend.
 - **Frontend**: Vercel, buildado com `VITE_API_URL` apontando para a URL

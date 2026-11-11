@@ -1,3 +1,6 @@
+import { useEffect } from "react";
+import api from "./api/client";
+import { ServerWakingBanner } from "./components/ServerWakingBanner";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -10,8 +13,13 @@ import { GeneralClosing } from "./pages/GeneralClosing";
 import { Professores } from "./pages/Professores";
 
 export default function App() {
+  useEffect(() => {
+    api.get("/health/live").catch(() => undefined);
+  }, []);
+
   return (
     <BrowserRouter>
+      <ServerWakingBanner />
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
