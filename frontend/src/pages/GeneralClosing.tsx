@@ -4,6 +4,7 @@ import api from '../api/client';
 import { getErrorMessage } from '../api/errors';
 import { Layout } from '../components/Layout';
 import { ExportarWhatsApp } from '../components/ExportarWhatsApp';
+import { useFeedback } from '../context/FeedbackContext';
 import { Modal } from '../components/Modal';
 import { EditLessonModal } from '../components/EditLessonModal';
 import { Lesson, ResumoGeral, ResumoGeralItem, ResumoProfessor } from '../types';
@@ -23,6 +24,7 @@ function formatEventDate(iso: string) {
 }
 
 export function GeneralClosing() {
+  const { confirmar, avisar } = useFeedback();
   const [periodo, setPeriodo] = useState<Periodo>(getPeriodoAtual());
   const [resumo, setResumo] = useState<ResumoGeral | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,12 +84,17 @@ export function GeneralClosing() {
     setReloadKey((k) => k + 1);
   }
 
-  async function executarAcaoDePeriodo(acao: () => Promise<unknown>, falha: string) {
+  async function executarAcaoDePeriodo(
+    acao: () => Promise<unknown>,
+    falha: string,
+    sucesso?: string,
+  ) {
     setPeriodoError('');
     setActionError('');
     setSalvandoFechamento(true);
     try {
       await acao();
+      if (sucesso) avisar(sucesso);
       recarregarTudo();
     } catch (err) {
       const mensagem = getErrorMessage(err, falha);
@@ -98,51 +105,67 @@ export function GeneralClosing() {
     }
   }
 
-  function fecharPeriodo() {
-    if (
-      !confirm(
-        `Fechar o período ${periodo.label}?\n\nDepois de fechado, NINGUÉM (nem você) poderá criar, editar ou excluir aulas desse período, até que ele seja reaberto.`,
-      )
-    )
-      return;
+  async function fecharPeriodo() {
+    const ok = await confirmar({
+      titulo: `Fechar o período ${periodo.label}?`,
+      mensagem:
+        'Depois de fechado, NINGUÉM (nem você) poderá criar, editar ou excluir aulas desse período, até que ele seja reaberto.',
+      confirmar: 'Fechar período',
+    });
+    if (!ok) return;
     executarAcaoDePeriodo(
       () => api.post('/closing/periods', { start: toQueryDate(periodo.start) }),
       'Não foi possível fechar o período.',
+      'Período fechado.',
     );
   }
 
-  function reabrirPeriodo() {
+  async function reabrirPeriodo() {
     if (!resumo?.fechamento) return;
     const idFechamento = resumo.fechamento.id;
-    if (
-      !confirm(
-        `Reabrir o período ${periodo.label}?\n\nAs aulas dele voltam a poder ser alteradas e o total pode mudar.`,
-      )
-    )
-      return;
+    const ok = await confirmar({
+      titulo: `Reabrir o período ${periodo.label}?`,
+      mensagem: 'As aulas dele voltam a poder ser alteradas e o total pode mudar.',
+      confirmar: 'Reabrir',
+      perigo: true,
+    });
+    if (!ok) return;
     executarAcaoDePeriodo(
       () => api.delete(`/closing/periods/${idFechamento}`),
       'Não foi possível reabrir o período.',
+      'Período reaberto.',
     );
   }
 
-  function marcarComoPago(item: ResumoGeralItem) {
+  async function marcarComoPago(item: ResumoGeralItem) {
     if (!resumo?.fechamento) return;
     const idFechamento = resumo.fechamento.id;
-    if (!confirm(`Marcar ${item.nome} como pago(a): ${formatBRL(item.totalReceber)}?`)) return;
+    const ok = await confirmar({
+      titulo: `Marcar ${item.nome} como pago(a)?`,
+      mensagem: `Valor: ${formatBRL(item.totalReceber)}`,
+      confirmar: 'Marcar como pago',
+    });
+    if (!ok) return;
     executarAcaoDePeriodo(
       () => api.post(`/closing/periods/${idFechamento}/payments/${item.professorId}`),
       'Não foi possível marcar como pago.',
+      `Pagamento de ${item.nome} registrado.`,
     );
   }
 
-  function desfazerPagamento(item: ResumoGeralItem) {
+  async function desfazerPagamento(item: ResumoGeralItem) {
     if (!resumo?.fechamento) return;
     const idFechamento = resumo.fechamento.id;
-    if (!confirm(`Desfazer o pagamento de ${item.nome}?`)) return;
+    const ok = await confirmar({
+      titulo: `Desfazer o pagamento de ${item.nome}?`,
+      confirmar: 'Desfazer',
+      perigo: true,
+    });
+    if (!ok) return;
     executarAcaoDePeriodo(
       () => api.delete(`/closing/periods/${idFechamento}/payments/${item.professorId}`),
       'Não foi possível desfazer o pagamento.',
+      `Pagamento de ${item.nome} desfeito.`,
     );
   }
 
@@ -150,15 +173,17 @@ export function GeneralClosing() {
     const aviso = estaNoPeriodoAtual
       ? ''
       : `\n\nATENÇÃO: este período (${periodo.label}) já passou. Excluir vai alterar o fechamento dele.`;
-    if (
-      !confirm(
-        `Excluir a aula de ${itemAtual?.nome} em ${formatDate(aula.date)} às ${aula.time}?${aviso}`,
-      )
-    )
-      return;
+    const ok = await confirmar({
+      titulo: 'Excluir aula?',
+      mensagem: `Aula de ${itemAtual?.nome} em ${formatDate(aula.date)} às ${aula.time}.${aviso}`,
+      confirmar: 'Excluir',
+      perigo: true,
+    });
+    if (!ok) return;
     setActionError('');
     try {
       await api.delete(`/lessons/${aula.id}`);
+      avisar('Aula excluída.');
       recarregarTudo();
     } catch (err) {
       setActionError(getErrorMessage(err, 'Não foi possível excluir a aula.'));
@@ -406,6 +431,7 @@ export function GeneralClosing() {
           onClose={() => setEditando(null)}
           onSaved={() => {
             setEditando(null);
+            avisar('Aula editada com sucesso.');
             recarregarTudo();
           }}
         />

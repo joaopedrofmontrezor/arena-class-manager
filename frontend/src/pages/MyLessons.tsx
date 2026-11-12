@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api from "../api/client";
 import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
+import { useFeedback } from "../context/FeedbackContext";
 import { EditLessonModal } from "../components/EditLessonModal";
 import { Lesson } from "../types";
 import {
@@ -25,6 +26,7 @@ function formatDate(iso: string) {
 }
 
 export function MyLessons() {
+  const { confirmar, avisar } = useFeedback();
   const [periodo, setPeriodo] = useState<Periodo>(getPeriodoAtual());
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,15 +67,17 @@ export function MyLessons() {
     const aviso = estaNoPeriodoAtual
       ? ""
       : `\n\nATENÇÃO: este período (${periodo.label}) já passou. Excluir vai alterar o fechamento dele.`;
-    if (
-      !confirm(
-        `Excluir a aula de ${formatDate(lesson.date)} às ${lesson.time}?${aviso}`,
-      )
-    )
-      return;
+    const ok = await confirmar({
+      titulo: "Excluir aula?",
+      mensagem: `Aula de ${formatDate(lesson.date)} às ${lesson.time}.${aviso}`,
+      confirmar: "Excluir",
+      perigo: true,
+    });
+    if (!ok) return;
     setActionError("");
     try {
       await api.delete(`/lessons/${lesson.id}`);
+      avisar("Aula excluída.");
       load();
     } catch (err) {
       setActionError(getErrorMessage(err, "Não foi possível excluir a aula."));
@@ -192,6 +196,7 @@ export function MyLessons() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
+            avisar("Aula editada com sucesso.");
             load();
           }}
         />

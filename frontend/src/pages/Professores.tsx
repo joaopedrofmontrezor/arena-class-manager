@@ -3,9 +3,16 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import { getErrorMessage } from "../api/errors";
 import { Layout } from "../components/Layout";
+import { Modal } from "../components/Modal";
+import { useFeedback } from "../context/FeedbackContext";
 import { User } from "../types";
 
 export function Professores() {
+  const { avisar } = useFeedback();
+  const [trocandoSenha, setTrocandoSenha] = useState<User | null>(null);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [erroSenha, setErroSenha] = useState("");
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
   const navigate = useNavigate();
   const [professores, setProfessores] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +44,7 @@ export function Professores() {
       setEmail("");
       setPassword("");
       setShowForm(false);
+      avisar("Professor criado.");
       load();
     } catch (err) {
       setError(getErrorMessage(err, "Não foi possível criar o professor."));
@@ -46,21 +54,41 @@ export function Professores() {
   }
 
   async function toggleActive(p: User) {
-    await api.patch(`/users/${p.id}`, { active: !p.active });
-    load();
+    try {
+      await api.patch(`/users/${p.id}`, { active: !p.active });
+      avisar(p.active ? `${p.name} desativado(a).` : `${p.name} reativado(a).`);
+      load();
+    } catch (err) {
+      avisar(getErrorMessage(err, "Não foi possível alterar o professor."), "erro");
+    }
   }
 
-  async function handleResetPassword(p: User) {
-    const novaSenha = prompt(
-      `Nova senha para ${p.name} (mínimo 6 caracteres):`,
-    );
-    if (!novaSenha) return;
+  function abrirTrocaDeSenha(p: User) {
+    setTrocandoSenha(p);
+    setNovaSenha("");
+    setErroSenha("");
+  }
+
+  async function salvarNovaSenha(e: FormEvent) {
+    e.preventDefault();
+    if (!trocandoSenha) return;
     if (novaSenha.length < 6) {
-      alert("Senha muito curta.");
+      setErroSenha("A senha precisa ter pelo menos 6 caracteres.");
       return;
     }
-    await api.patch(`/users/${p.id}/password`, { newPassword: novaSenha });
-    alert("Senha atualizada.");
+    setErroSenha("");
+    setSalvandoSenha(true);
+    try {
+      await api.patch(`/users/${trocandoSenha.id}/password`, {
+        newPassword: novaSenha,
+      });
+      avisar(`Senha de ${trocandoSenha.name} atualizada.`);
+      setTrocandoSenha(null);
+    } catch (err) {
+      setErroSenha(getErrorMessage(err, "Não foi possível atualizar a senha."));
+    } finally {
+      setSalvandoSenha(false);
+    }
   }
 
   return (
@@ -161,7 +189,7 @@ export function Professores() {
                 {p.active ? "Desativar" : "Reativar"}
               </button>
               <button
-                onClick={() => handleResetPassword(p)}
+                onClick={() => abrirTrocaDeSenha(p)}
                 className="text-xs font-medium text-teal"
               >
                 Redefinir senha
@@ -170,6 +198,37 @@ export function Professores() {
           </div>
         ))}
       </div>
+
+      {trocandoSenha && (
+        <Modal
+          title={`Nova senha — ${trocandoSenha.name}`}
+          onClose={() => setTrocandoSenha(null)}
+        >
+          <form onSubmit={salvarNovaSenha} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-ink-soft mb-1">
+                Nova senha (mínimo 6 caracteres)
+              </label>
+              <input
+                type="password"
+                autoFocus
+                autoComplete="new-password"
+                value={novaSenha}
+                onChange={(e) => setNovaSenha(e.target.value)}
+                className="w-full border border-black/10 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            {erroSenha && <p className="text-xs text-coral-dark">{erroSenha}</p>}
+            <button
+              type="submit"
+              disabled={salvandoSenha}
+              className="w-full bg-coral text-white font-medium rounded-lg py-2.5 text-sm disabled:opacity-60"
+            >
+              {salvandoSenha ? "Salvando..." : "Salvar senha"}
+            </button>
+          </form>
+        </Modal>
+      )}
     </Layout>
   );
 }
