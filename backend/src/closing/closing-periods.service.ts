@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { ClosingService } from "./closing.service";
+import { AuditService } from "../audit/audit.service";
 import { getPeriodoAtual, Periodo, periodoJaEncerrado } from "./period.util";
 
 interface PagamentoRegistro {
@@ -45,6 +46,7 @@ export class ClosingPeriodsService {
   constructor(
     private prisma: PrismaService,
     private closing: ClosingService,
+    private audit: AuditService,
   ) {}
 
   
@@ -89,8 +91,9 @@ export class ClosingPeriodsService {
       throw new ConflictException("Este período já está fechado.");
     }
 
+    let criado;
     try {
-      return await this.prisma.closedPeriod.create({
+      criado = await this.prisma.closedPeriod.create({
         data: {
           periodStart: periodo.start,
           periodEnd: periodo.end,
@@ -104,9 +107,11 @@ export class ClosingPeriodsService {
       }
       throw erro;
     }
+    await this.audit.periodoFechado(ownerId, criado);
+    return criado;
   }
 
-  async reopen(closedPeriodId: string) {
+  async reopen(closedPeriodId: string, ownerId: string) {
     const periodo = await this.prisma.closedPeriod.findUnique({
       where: { id: closedPeriodId },
       include: { _count: { select: { payments: true } } },
@@ -130,6 +135,7 @@ export class ClosingPeriodsService {
       }
       throw erro;
     }
+    await this.audit.periodoReaberto(ownerId, periodo);
     return { ok: true };
   }
 
@@ -157,8 +163,9 @@ export class ClosingPeriodsService {
       );
     }
 
+    let pagamento;
     try {
-      return await this.prisma.closingPayment.create({
+      pagamento = await this.prisma.closingPayment.create({
         data: {
           closedPeriodId,
           professorId,
@@ -174,14 +181,38 @@ export class ClosingPeriodsService {
       }
       throw erro;
     }
+    await this.audit.pagamentoMarcado(
+      ownerId,
+      periodo,
+      professorId,
+      resumo.totalReceber,
+    );
+    return pagamento;
   }
 
-  async unmarkPaid(closedPeriodId: string, professorId: string) {
+  async unmarkPaid(
+    closedPeriodId: string,
+    professorId: string,
+    ownerId: string,
+  ) {
+    // Lê antes de apagar para o histórico saber o valor e o período.
+    const anterior = await this.prisma.closingPayment.findUnique({
+      where: { closedPeriodId_professorId: { closedPeriodId, professorId } },
+      include: { closedPeriod: { select: { periodStart: true, label: true } } },
+    });
     const { count } = await this.prisma.closingPayment.deleteMany({
       where: { closedPeriodId, professorId },
     });
     if (count === 0) {
       throw new NotFoundException("Pagamento não encontrado.");
+    }
+    if (anterior) {
+      await this.audit.pagamentoDesfeito(
+        ownerId,
+        anterior.closedPeriod,
+        professorId,
+        Number(anterior.amount),
+      );
     }
     return { ok: true };
   }

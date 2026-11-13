@@ -209,6 +209,9 @@ export function GeneralClosing() {
         <Link to="/professores" className="text-xs text-coral font-medium underline">
           Gerenciar professores
         </Link>
+        <Link to="/historico" className="text-xs text-coral font-medium underline">
+          Histórico
+        </Link>
         {!estaNoPeriodoAtual && (
           <button onClick={() => setPeriodo(periodoAtual)} className="text-xs text-coral font-medium underline">
             Voltar para o período atual

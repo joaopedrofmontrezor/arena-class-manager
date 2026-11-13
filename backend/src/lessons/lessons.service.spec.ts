@@ -8,6 +8,7 @@ import {
 import { LessonsService } from "./lessons.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ClosingPeriodsService } from "../closing/closing-periods.service";
+import { AuditService } from "../audit/audit.service";
 import { LessonType, Role } from "@prisma/client";
 
 describe("LessonsService", () => {
@@ -15,6 +16,10 @@ describe("LessonsService", () => {
 
   let prisma: any;
   let closingPeriods: { assertDateOpen: jest.Mock<(...args: any[]) => any> };
+  let audit: Record<
+    "aulaCriada" | "aulaEditada" | "aulaExcluida",
+    jest.Mock<(...args: any[]) => any>
+  >;
 
   const PROFESSOR_ID = "professor-1";
   const AUXILIAR_ID = "professor-2";
@@ -32,6 +37,11 @@ describe("LessonsService", () => {
     };
 
     
+    audit = {
+      aulaCriada: jest.fn(async () => undefined),
+      aulaEditada: jest.fn(async () => undefined),
+      aulaExcluida: jest.fn(async () => undefined),
+    };
     closingPeriods = { assertDateOpen: jest.fn() };
     closingPeriods.assertDateOpen.mockResolvedValue(undefined);
 
@@ -40,6 +50,7 @@ describe("LessonsService", () => {
         LessonsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ClosingPeriodsService, useValue: closingPeriods },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
 
@@ -533,6 +544,104 @@ describe("LessonsService", () => {
       expect(prisma.lesson.delete).toHaveBeenCalledWith({
         where: { id: "lesson-1" },
       });
+    });
+  });
+
+  describe("histórico de alterações", () => {
+    const aulaAntes = {
+      id: "lesson-1",
+      professorId: PROFESSOR_ID,
+      assistantId: null,
+      type: LessonType.TURMA,
+      professorValue: 28,
+      date: new Date("2026-09-10T00:00:00.000Z"),
+      time: "08:00",
+    };
+
+    it("criar: registra a aula criada, tendo o professor como autor", async () => {
+      const criada = { ...aulaAntes, id: "nova" };
+      prisma.lesson.create.mockResolvedValue(criada);
+
+      await service.create(PROFESSOR_ID, {
+        date: "2026-09-10",
+        time: "08:00",
+        type: LessonType.TURMA,
+      } as any);
+
+      expect(audit.aulaCriada).toHaveBeenCalledWith(PROFESSOR_ID, criada);
+    });
+
+    it("criar em lote: registra uma entrada por aula", async () => {
+      prisma.lesson.create
+        .mockResolvedValueOnce({ ...aulaAntes, id: "a" })
+        .mockResolvedValueOnce({ ...aulaAntes, id: "b" });
+
+      await service.createBatch(PROFESSOR_ID, {
+        date: "2026-09-10",
+        lessons: [
+          { time: "08:00", type: LessonType.TURMA },
+          { time: "09:00", type: LessonType.TURMA },
+        ],
+      } as any);
+
+      expect(audit.aulaCriada).toHaveBeenCalledTimes(2);
+    });
+
+    it("não registra criação quando a aula foi recusada", async () => {
+      closingPeriods.assertDateOpen.mockRejectedValue(new ConflictException());
+
+      await expect(
+        service.create(PROFESSOR_ID, {
+          date: "2026-09-10",
+          time: "08:00",
+          type: LessonType.TURMA,
+        } as any),
+      ).rejects.toThrow();
+      expect(audit.aulaCriada).not.toHaveBeenCalled();
+    });
+
+    it("editar: registra o autor real (o Owner, quando é ele quem edita) com antes e depois", async () => {
+      const depois = { ...aulaAntes, time: "09:00" };
+      prisma.lesson.findUnique.mockResolvedValue(aulaAntes);
+      prisma.lesson.update.mockResolvedValue(depois);
+
+      await service.update("lesson-1", "owner-id", "OWNER", {
+        time: "09:00",
+      } as any);
+
+      expect(audit.aulaEditada).toHaveBeenCalledWith(
+        "owner-id",
+        aulaAntes,
+        depois,
+      );
+    });
+
+    it("editar recusado (403) não registra nada", async () => {
+      prisma.lesson.findUnique.mockResolvedValue(aulaAntes);
+
+      await expect(
+        service.update("lesson-1", "outro", "PROFESSOR", { time: "10:00" } as any),
+      ).rejects.toThrow(ForbiddenException);
+      expect(audit.aulaEditada).not.toHaveBeenCalled();
+    });
+
+    it("excluir: registra a aula como era antes de apagar", async () => {
+      prisma.lesson.findUnique.mockResolvedValue(aulaAntes);
+      prisma.lesson.delete.mockResolvedValue(aulaAntes);
+
+      await service.remove("lesson-1", PROFESSOR_ID, "PROFESSOR");
+
+      expect(audit.aulaExcluida).toHaveBeenCalledWith(PROFESSOR_ID, aulaAntes);
+    });
+
+    it("excluir recusado (período fechado) não registra nada", async () => {
+      prisma.lesson.findUnique.mockResolvedValue(aulaAntes);
+      closingPeriods.assertDateOpen.mockRejectedValue(new ConflictException());
+
+      await expect(
+        service.remove("lesson-1", PROFESSOR_ID, "PROFESSOR"),
+      ).rejects.toThrow();
+      expect(audit.aulaExcluida).not.toHaveBeenCalled();
     });
   });
 });

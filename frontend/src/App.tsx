@@ -12,6 +12,7 @@ import { MyLessons } from "./pages/MyLessons";
 import { Closing } from "./pages/Closing";
 import { GeneralClosing } from "./pages/GeneralClosing";
 import { Professores } from "./pages/Professores";
+import { Historico } from "./pages/Historico";
 
 export default function App() {
   useEffect(() => {
@@ -71,6 +72,15 @@ export default function App() {
             element={
               <ProtectedRoute requireRole="OWNER">
                 <Professores />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/historico"
+            element={
+              <ProtectedRoute requireRole="OWNER">
+                <Historico />
               </ProtectedRoute>
             }
           />

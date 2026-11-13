@@ -56,6 +56,16 @@ describe("Arena Class Manager - E2E", () => {
     });
   }
 
+  // O histórico não tem chave estrangeira (de propósito), então não bloqueia a
+  // remoção dos usuários, mas deixamos o banco de teste limpo.
+  async function limparHistoricoDeTeste() {
+    await prisma.auditLog.deleteMany({
+      where: {
+        actorName: { in: ["Owner E2E", "Professor A E2E", "Professor B E2E"] },
+      },
+    });
+  }
+
   let profAId: string;
   let profBId: string;
   let lessonDoProfessorAId: string;
@@ -84,6 +94,7 @@ describe("Arena Class Manager - E2E", () => {
     prisma = app.get(PrismaService);
 
     await limparFechamentosDeTeste();
+    await limparHistoricoDeTeste();
     await prisma.lesson.deleteMany({
       where: {
         professor: { email: { in: [PROF_A_EMAIL, PROF_B_EMAIL] } },
@@ -151,6 +162,7 @@ describe("Arena Class Manager - E2E", () => {
 
   afterAll(async () => {
     await limparFechamentosDeTeste();
+    await limparHistoricoDeTeste();
     await prisma.lesson.deleteMany({
       where: {
         professor: { email: { in: [PROF_A_EMAIL, PROF_B_EMAIL] } },
@@ -781,6 +793,147 @@ describe("Arena Class Manager - E2E", () => {
         .get("/closing/general/export?start=2026-09-01")
         .set("Cookie", sessaoOwner.cookieHeader)
         .expect(400);
+    });
+  });
+
+  describe("Histórico de alterações (auditoria)", () => {
+    // Quinzena de julho/2026, sem relação com as outras suítes.
+    const DIA = "2026-07-06";
+    const INICIO = "2026-07-01";
+    const FILTRO = () => `periodStart=${INICIO}&professorId=${profAId}`;
+
+    const comoOwner = (t: request.Test) =>
+      t
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoOwner.csrfToken);
+    const comoProfA = (t: request.Test) =>
+      t
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .set(CSRF_HEADER_NAME, sessaoProfA.csrfToken);
+
+    let aulaId: string;
+
+    it("exige login (401) e é só para o OWNER (403)", async () => {
+      await request(app.getHttpServer()).get("/audit").expect(401);
+      await request(app.getHttpServer())
+        .get("/audit")
+        .set("Cookie", sessaoProfA.cookieHeader)
+        .expect(403);
+    });
+
+    it("criar, editar e excluir uma aula geram três registros, do mais novo ao mais antigo", async () => {
+      const criada = await comoProfA(
+        request(app.getHttpServer()).post("/lessons"),
+      )
+        .send({ date: DIA, time: "17:00", type: "TURMA" })
+        .expect(201);
+      aulaId = criada.body.id;
+
+      // Quem edita é o OWNER: o autor registrado tem de ser ele, não o dono da aula.
+      await comoOwner(request(app.getHttpServer()).patch(`/lessons/${aulaId}`))
+        .send({ time: "18:00" })
+        .expect(200);
+
+      await comoProfA(request(app.getHttpServer()).delete(`/lessons/${aulaId}`))
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .get(`/audit?${FILTRO()}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+
+      const acoes = res.body.itens.map((i: { action: string }) => i.action);
+      expect(acoes).toEqual(["AULA_EXCLUIDA", "AULA_EDITADA", "AULA_CRIADA"]);
+
+      const [excluida, editada, criadaLog] = res.body.itens;
+      expect(excluida.actorName).toBe("Professor A E2E");
+      expect(editada.actorName).toBe("Owner E2E");
+      expect(editada.professorName).toBe("Professor A E2E");
+      expect(editada.changes).toEqual([
+        { campo: "Horário", de: "17:00", para: "18:00" },
+      ]);
+      expect(criadaLog.summary).toContain("Criou a aula de 06/07/2026 às 17:00");
+      expect(res.body.proximoCursor).toBeNull();
+    });
+
+    it("uma edição que não muda nada não gera registro", async () => {
+      const criada = await comoProfA(
+        request(app.getHttpServer()).post("/lessons"),
+      )
+        .send({ date: DIA, time: "19:00", type: "TURMA" })
+        .expect(201);
+      const antes = await request(app.getHttpServer())
+        .get(`/audit?${FILTRO()}`)
+        .set("Cookie", sessaoOwner.cookieHeader);
+
+      await comoProfA(
+        request(app.getHttpServer()).patch(`/lessons/${criada.body.id}`),
+      )
+        .send({ time: "19:00" })
+        .expect(200);
+
+      const depois = await request(app.getHttpServer())
+        .get(`/audit?${FILTRO()}`)
+        .set("Cookie", sessaoOwner.cookieHeader);
+      expect(depois.body.itens).toHaveLength(antes.body.itens.length);
+
+      await comoProfA(
+        request(app.getHttpServer()).delete(`/lessons/${criada.body.id}`),
+      ).expect(200);
+    });
+
+    it("paginação: limit pequeno devolve cursor e a página seguinte continua de onde parou", async () => {
+      const p1 = await request(app.getHttpServer())
+        .get(`/audit?${FILTRO()}&limit=2`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+      expect(p1.body.itens).toHaveLength(2);
+      expect(p1.body.proximoCursor).toBeTruthy();
+
+      const p2 = await request(app.getHttpServer())
+        .get(`/audit?${FILTRO()}&limit=2&cursor=${p1.body.proximoCursor}`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+      const idsP1 = p1.body.itens.map((i: { id: string }) => i.id);
+      for (const item of p2.body.itens) {
+        expect(idsP1).not.toContain(item.id);
+      }
+      expect(p2.body.itens.length).toBeGreaterThan(0);
+    });
+
+    it("limit fora do intervalo é recusado (400)", async () => {
+      await request(app.getHttpServer())
+        .get("/audit?limit=1000")
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(400);
+    });
+
+    it("fechar, reabrir e pagar entram no histórico; ação recusada (409) não entra", async () => {
+      const fechado = await comoOwner(
+        request(app.getHttpServer()).post("/closing/periods"),
+      )
+        .send({ start: INICIO })
+        .expect(201);
+
+      // Recusada pela trava do período fechado: não pode virar registro.
+      await comoProfA(request(app.getHttpServer()).post("/lessons"))
+        .send({ date: DIA, time: "20:00", type: "TURMA" })
+        .expect(409);
+
+      await comoOwner(
+        request(app.getHttpServer()).delete(`/closing/periods/${fechado.body.id}`),
+      ).expect(200);
+
+      const res = await request(app.getHttpServer())
+        .get(`/audit?periodStart=${INICIO}&limit=100`)
+        .set("Cookie", sessaoOwner.cookieHeader)
+        .expect(200);
+
+      const acoes = res.body.itens.map((i: { action: string }) => i.action);
+      expect(acoes.slice(0, 2)).toEqual(["PERIODO_REABERTO", "PERIODO_FECHADO"]);
+      expect(acoes.filter((a: string) => a === "AULA_CRIADA")).toHaveLength(2);
+      expect(res.body.itens[1].summary).toBe("Fechou o período 01 a 15 de julho");
+      expect(res.body.itens[1].actorName).toBe("Owner E2E");
     });
   });
 

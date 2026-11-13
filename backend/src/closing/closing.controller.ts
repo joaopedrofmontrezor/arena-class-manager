@@ -111,8 +111,8 @@ export class ClosingController {
   @Delete("periods/:id")
   @UseGuards(RolesGuard)
   @Roles("OWNER")
-  reopenPeriod(@Param("id") id: string) {
-    return this.closingPeriods.reopen(id);
+  reopenPeriod(@CurrentUser() user: CurrentUserData, @Param("id") id: string) {
+    return this.closingPeriods.reopen(id, user.userId);
   }
 
   @Post("periods/:id/payments/:professorId")
@@ -129,8 +129,12 @@ export class ClosingController {
   @Delete("periods/:id/payments/:professorId")
   @UseGuards(RolesGuard)
   @Roles("OWNER")
-  unmarkPaid(@Param("id") id: string, @Param("professorId") professorId: string) {
-    return this.closingPeriods.unmarkPaid(id, professorId);
+  unmarkPaid(
+    @CurrentUser() user: CurrentUserData,
+    @Param("id") id: string,
+    @Param("professorId") professorId: string,
+  ) {
+    return this.closingPeriods.unmarkPaid(id, professorId, user.userId);
   }
 
   private resolvePeriodo(query: PeriodoQueryDto): Periodo | undefined {

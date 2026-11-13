@@ -8,11 +8,19 @@ import {
 import { ClosingPeriodsService } from "./closing-periods.service";
 import { ClosingService } from "./closing.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 
 describe("ClosingPeriodsService", () => {
   let service: ClosingPeriodsService;
   let prisma: any;
   let closing: { getResumoProfessor: jest.Mock<(...args: any[]) => any> };
+  let audit: Record<
+    | "periodoFechado"
+    | "periodoReaberto"
+    | "pagamentoMarcado"
+    | "pagamentoDesfeito",
+    jest.Mock<(...args: any[]) => any>
+  >;
 
   const OWNER_ID = "owner-1";
   const PROF_ID = "prof-1";
@@ -38,16 +46,27 @@ describe("ClosingPeriodsService", () => {
         create: jest.fn(),
         delete: jest.fn(),
       },
-      closingPayment: { create: jest.fn(), deleteMany: jest.fn() },
+      closingPayment: {
+        create: jest.fn(),
+        deleteMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
       user: { findUnique: jest.fn() },
     };
     closing = { getResumoProfessor: jest.fn() };
+    audit = {
+      periodoFechado: jest.fn(async () => undefined),
+      periodoReaberto: jest.fn(async () => undefined),
+      pagamentoMarcado: jest.fn(async () => undefined),
+      pagamentoDesfeito: jest.fn(async () => undefined),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         ClosingPeriodsService,
         { provide: PrismaService, useValue: prisma },
         { provide: ClosingService, useValue: closing },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
 
@@ -111,6 +130,25 @@ describe("ClosingPeriodsService", () => {
       expect(data.closedById).toBe(OWNER_ID);
     });
 
+    it("registra no histórico quem fechou o período", async () => {
+      prisma.closedPeriod.findUnique.mockResolvedValue(null);
+      prisma.closedPeriod.create.mockResolvedValue(registroFechado);
+
+      await service.close(OWNER_ID, INICIO_ENCERRADO);
+
+      expect(audit.periodoFechado).toHaveBeenCalledWith(
+        OWNER_ID,
+        registroFechado,
+      );
+    });
+
+    it("não registra no histórico quando o fechamento falha", async () => {
+      prisma.closedPeriod.findUnique.mockResolvedValue({ id: "ja-existe" });
+
+      await expect(service.close(OWNER_ID, INICIO_ENCERRADO)).rejects.toThrow();
+      expect(audit.periodoFechado).not.toHaveBeenCalled();
+    });
+
     it("aceita o dia 16 e fecha até o último dia do mês", async () => {
       prisma.closedPeriod.findUnique.mockResolvedValue(null);
       prisma.closedPeriod.create.mockResolvedValue(registroFechado);
@@ -127,7 +165,7 @@ describe("ClosingPeriodsService", () => {
     it("404 se o período fechado não existe", async () => {
       prisma.closedPeriod.findUnique.mockResolvedValue(null);
 
-      await expect(service.reopen("nao-existe")).rejects.toThrow(
+      await expect(service.reopen("nao-existe", OWNER_ID)).rejects.toThrow(
         NotFoundException,
       );
       expect(prisma.closedPeriod.delete).not.toHaveBeenCalled();
@@ -139,7 +177,7 @@ describe("ClosingPeriodsService", () => {
         _count: { payments: 2 },
       });
 
-      await expect(service.reopen("cp-1")).rejects.toThrow(ConflictException);
+      await expect(service.reopen("cp-1", OWNER_ID)).rejects.toThrow(ConflictException);
       expect(prisma.closedPeriod.delete).not.toHaveBeenCalled();
     });
 
@@ -150,10 +188,30 @@ describe("ClosingPeriodsService", () => {
       });
       prisma.closedPeriod.delete.mockResolvedValue(registroFechado);
 
-      await expect(service.reopen("cp-1")).resolves.toEqual({ ok: true });
+      await expect(service.reopen("cp-1", OWNER_ID)).resolves.toEqual({ ok: true });
       expect(prisma.closedPeriod.delete).toHaveBeenCalledWith({
         where: { id: "cp-1" },
       });
+    });
+
+    it("registra no histórico quem reabriu e qual período", async () => {
+      const periodo = { ...registroFechado, _count: { payments: 0 } };
+      prisma.closedPeriod.findUnique.mockResolvedValue(periodo);
+      prisma.closedPeriod.delete.mockResolvedValue(registroFechado);
+
+      await service.reopen("cp-1", OWNER_ID);
+
+      expect(audit.periodoReaberto).toHaveBeenCalledWith(OWNER_ID, periodo);
+    });
+
+    it("não registra a reabertura quando ela é recusada (409)", async () => {
+      prisma.closedPeriod.findUnique.mockResolvedValue({
+        ...registroFechado,
+        _count: { payments: 1 },
+      });
+
+      await expect(service.reopen("cp-1", OWNER_ID)).rejects.toThrow();
+      expect(audit.periodoReaberto).not.toHaveBeenCalled();
     });
 
     it("se um pagamento aparecer no meio do caminho (P2003), responde 409 em vez de 500", async () => {
@@ -163,7 +221,7 @@ describe("ClosingPeriodsService", () => {
       });
       prisma.closedPeriod.delete.mockRejectedValue({ code: "P2003" });
 
-      await expect(service.reopen("cp-1")).rejects.toThrow(ConflictException);
+      await expect(service.reopen("cp-1", OWNER_ID)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -223,6 +281,29 @@ describe("ClosingPeriodsService", () => {
       });
     });
 
+    it("registra no histórico o pagamento com o valor calculado", async () => {
+      cenarioValido(98.5);
+
+      await service.markPaid(OWNER_ID, "cp-1", PROF_ID);
+
+      expect(audit.pagamentoMarcado).toHaveBeenCalledWith(
+        OWNER_ID,
+        registroFechado,
+        PROF_ID,
+        98.5,
+      );
+    });
+
+    it("não registra o pagamento quando ele já existia (409)", async () => {
+      cenarioValido();
+      prisma.closingPayment.create.mockRejectedValue({ code: "P2002" });
+
+      await expect(
+        service.markPaid(OWNER_ID, "cp-1", PROF_ID),
+      ).rejects.toThrow();
+      expect(audit.pagamentoMarcado).not.toHaveBeenCalled();
+    });
+
     it("409 se o professor já foi marcado como pago (P2002)", async () => {
       cenarioValido();
       prisma.closingPayment.create.mockRejectedValue({ code: "P2002" });
@@ -237,15 +318,55 @@ describe("ClosingPeriodsService", () => {
     it("404 se não havia pagamento para desfazer", async () => {
       prisma.closingPayment.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.unmarkPaid("cp-1", PROF_ID)).rejects.toThrow(
+      await expect(service.unmarkPaid("cp-1", PROF_ID, OWNER_ID)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it("registra no histórico o pagamento desfeito, com o valor que havia sido pago", async () => {
+      prisma.closingPayment.findUnique.mockResolvedValue({
+        amount: "98.50",
+        closedPeriod: {
+          periodStart: registroFechado.periodStart,
+          label: registroFechado.label,
+        },
+      });
+      prisma.closingPayment.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.unmarkPaid("cp-1", PROF_ID, OWNER_ID);
+
+      expect(prisma.closingPayment.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            closedPeriodId_professorId: {
+              closedPeriodId: "cp-1",
+              professorId: PROF_ID,
+            },
+          },
+        }),
+      );
+      expect(audit.pagamentoDesfeito).toHaveBeenCalledWith(
+        OWNER_ID,
+        { periodStart: registroFechado.periodStart, label: registroFechado.label },
+        PROF_ID,
+        98.5,
+      );
+    });
+
+    it("não registra nada quando não havia pagamento", async () => {
+      prisma.closingPayment.findUnique.mockResolvedValue(null);
+      prisma.closingPayment.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.unmarkPaid("cp-1", PROF_ID, OWNER_ID),
+      ).rejects.toThrow(NotFoundException);
+      expect(audit.pagamentoDesfeito).not.toHaveBeenCalled();
     });
 
     it("desfaz o pagamento do professor naquele período", async () => {
       prisma.closingPayment.deleteMany.mockResolvedValue({ count: 1 });
 
-      await expect(service.unmarkPaid("cp-1", PROF_ID)).resolves.toEqual({
+      await expect(service.unmarkPaid("cp-1", PROF_ID, OWNER_ID)).resolves.toEqual({
         ok: true,
       });
       expect(prisma.closingPayment.deleteMany).toHaveBeenCalledWith({

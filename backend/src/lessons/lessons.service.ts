@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { ClosingPeriodsService } from "../closing/closing-periods.service";
+import { AuditService } from "../audit/audit.service";
 import { LessonType, Role } from "@prisma/client";
 import { CreateLessonDto } from "./dto/create-lesson.dto";
 import { UpdateLessonDto } from "./dto/update-lesson.dto";
@@ -17,6 +18,7 @@ export class LessonsService {
   constructor(
     private prisma: PrismaService,
     private closingPeriods: ClosingPeriodsService,
+    private audit: AuditService,
   ) {}
 
   private resolveProfessorValue(
@@ -76,7 +78,7 @@ export class LessonsService {
       dto.professorValue,
     );
 
-    return this.prisma.lesson.create({
+    const criada = await this.prisma.lesson.create({
       data: {
         date: new Date(dto.date),
         time: dto.time,
@@ -88,6 +90,8 @@ export class LessonsService {
         observation: dto.observation,
       },
     });
+    await this.audit.aulaCriada(professorId, criada);
+    return criada;
   }
 
   async createBatch(professorId: string, dto: CreateLessonsBatchDto) {
@@ -122,9 +126,13 @@ export class LessonsService {
       observation: item.observation,
     }));
 
-    return this.prisma.$transaction(
+    const criadas = await this.prisma.$transaction(
       data.map((d) => this.prisma.lesson.create({ data: d })),
     );
+    for (const aula of criadas) {
+      await this.audit.aulaCriada(professorId, aula);
+    }
+    return criadas;
   }
 
   findMineByPeriod(professorId: string, start: Date, end: Date) {
@@ -195,7 +203,7 @@ export class LessonsService {
         : this.normalizeAssistantId(dto.assistantId);
     await this.assertValidAssistant(finalAssistantId, lesson.professorId);
 
-    return this.prisma.lesson.update({
+    const atualizada = await this.prisma.lesson.update({
       where: { id: lessonId },
       data: {
         date: dto.date ? new Date(dto.date) : undefined,
@@ -207,6 +215,8 @@ export class LessonsService {
         observation: dto.observation,
       },
     });
+    await this.audit.aulaEditada(userId, lesson, atualizada);
+    return atualizada;
   }
 
   async remove(lessonId: string, userId: string, role: string) {
@@ -214,6 +224,10 @@ export class LessonsService {
     this.assertOwnerOrSelf(lesson.professorId, userId, role);
     await this.closingPeriods.assertDateOpen(lesson.date);
 
-    return this.prisma.lesson.delete({ where: { id: lessonId } });
+    const excluida = await this.prisma.lesson.delete({
+      where: { id: lessonId },
+    });
+    await this.audit.aulaExcluida(userId, lesson);
+    return excluida;
   }
 }
