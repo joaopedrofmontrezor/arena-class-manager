@@ -9,6 +9,7 @@ import { UsersModule } from "./users/users.module";
 import { LessonsModule } from "./lessons/lessons.module";
 import { ClosingModule } from "./closing/closing.module";
 import { HealthModule } from "./health/health.module";
+import { AuditModule } from "./audit/audit.module";
 import { CsrfGuard } from "./auth/guards/csrf.guard";
 import { buildLoggerOptions } from "./config/logger.config";
 
@@ -23,6 +24,7 @@ import { buildLoggerOptions } from "./config/logger.config";
     UsersModule,
     LessonsModule,
     ClosingModule,
+    AuditModule,
     HealthModule,
   ],
   providers: [

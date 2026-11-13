@@ -74,3 +74,33 @@ export interface ResumoGeral {
   totalGeral: number;
   fechamento: FechamentoGeral | null;
 }
+
+export type AcaoAuditoria =
+  | "AULA_CRIADA"
+  | "AULA_EDITADA"
+  | "AULA_EXCLUIDA"
+  | "PERIODO_FECHADO"
+  | "PERIODO_REABERTO"
+  | "PAGAMENTO_MARCADO"
+  | "PAGAMENTO_DESFEITO";
+
+export interface AlteracaoCampo {
+  campo: string;
+  de: string;
+  para: string;
+}
+
+export interface RegistroAuditoria {
+  id: string;
+  createdAt: string;
+  action: AcaoAuditoria;
+  actorName: string;
+  professorName: string | null;
+  summary: string;
+  changes: AlteracaoCampo[] | null;
+}
+
+export interface PaginaAuditoria {
+  itens: RegistroAuditoria[];
+  proximoCursor: string | null;
+}

@@ -89,3 +89,23 @@ model ClosingPayment {
 
   @@unique([closedPeriodId, professorId])
 }
+
+// Histórico de alterações (quem fez o quê e quando). Sem chaves estrangeiras
+// de propósito: o registro precisa sobreviver mesmo que o usuário ou a aula
+// sejam removidos depois, por isso guarda nomes e um resumo em texto.
+model AuditLog {
+  id            String   @id @default(uuid())
+  createdAt     DateTime @default(now())
+  action        String
+  actorId       String
+  actorName     String
+  professorId   String?
+  professorName String?
+  periodStart   DateTime? @db.Date
+  summary       String
+  changes       Json?
+
+  @@index([createdAt])
+  @@index([periodStart, createdAt])
+  @@index([professorId, createdAt])
+}
