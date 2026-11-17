@@ -9,7 +9,9 @@ Dois perfis de acesso:
 
 - **Professor**: lança suas próprias aulas e acompanha seu fechamento.
 - **Owner (dono da arena)**: tudo que o professor faz, além de ver o
-  fechamento geral de todos os professores e cadastrar/editar professores.
+  fechamento geral de todos os professores, fechar períodos e registrar
+  pagamentos, cadastrar/editar professores e consultar o histórico de
+  alterações.
 
 ## Stack
 
@@ -31,18 +33,19 @@ Dois perfis de acesso:
 │   │   ├── users/       # Cadastro/edição de professores (Owner)
 │   │   ├── lessons/     # CRUD de aulas
 │   │   ├── config/      # Configurações Gerais
-│   │   ├── closing/     # Fechamento (resumo por professor e geral)
-│   │   ├── health/      # GET /health (usado por monitoramento)
+│   │   ├── closing/     # Fechamento (resumo, períodos, pagamentos, exportação)
+│   │   ├── audit/       # Histórico de alterações (GET /audit, só Owner)
+│   │   ├── health/      # GET /health e /health/live (monitoramento)
 │   │   ├── common/      # DTOs, validators, filtros e middlewares compartilhados
 │   │   └── prisma/      # Serviços do Prisma
 │   ├── prisma/          # schema.prisma e migrations
 │   └── test/            # Testes automatizados
 ├── frontend/            # SPA React
 │   └── src/
-│       ├── pages/       # Login, Dashboard, Aulas, Fechamento, Professores...
-│       ├── context/     # AuthContext (sessão do usuário logado)
-│       ├── components/  # Layout, Modal, Editar  Aulas...
-│        ── utils/       # Regras de Fechamento, Calendário...
+│       ├── pages/       # Login, Dashboard, Aulas, Fechamento, Professores, Histórico...
+│       ├── context/     # AuthContext (sessão) e FeedbackContext (confirmações e avisos)
+│       ├── components/  # Layout, Modal, EditLessonModal, ExportarWhatsApp...
+│       ├── utils/       # Regras de Fechamento, Calendário...
 │       └── api/         # Cliente axios configurado
 ├── docker-compose.yml   # Ambiente local completo (Postgres + backend + frontend)
 ├── README.md            # Documentação e explicação do Projeto
@@ -120,7 +123,8 @@ Login é feito por e-mail/senha (`POST /auth/login`), que retorna um JWT.
 Em produção, backend e frontend ficam em domínios diferentes (Render +
 Vercel); como o Safari/iOS bloqueia cookies de terceiros definidos via
 fetch/XHR nesse cenário, o token também é devolvido no corpo da resposta e
-guardado em memória no frontend, enviado via header `Authorization: Bearer`
+guardado no `localStorage` do navegador (chave `arena_access_token`), enviado
+via header `Authorization: Bearer`
 em cada requisição (o cookie HttpOnly continua funcionando normalmente em
 navegadores que o aceitam). Ações de escrita (POST/PATCH/DELETE) exigem
 também um token CSRF obtido em `GET /auth/csrf`.
@@ -158,6 +162,33 @@ Endpoints (todos só para `OWNER`): `POST /closing/periods` (`{ "start":
 `GET /closing/general`, `/closing/me` e `/closing/professor/:id` ganham o campo
 `fechamento` (e `pago`/`pagoEm`/`valorPago` por professor).
 
+## Exportação do fechamento para WhatsApp
+
+O professor exporta o próprio fechamento e o Owner exporta o geral ou o de
+qualquer professor. O texto traz o período, o total, a lista de aulas e o
+status (em aberto, fechado ou pago). No app, o botão abre uma prévia com
+"Copiar texto" e "Enviar pelo WhatsApp".
+
+Endpoints (todos devolvem `{ "texto": "..." }` e aceitam `start`/`end`):
+`GET /closing/me/export` (qualquer usuário logado, só os próprios dados),
+`GET /closing/general/export` e `GET /closing/professor/:id/export` (só
+`OWNER`).
+
+## Histórico de alterações
+
+Cada criação, edição (com antes e depois dos campos que mudaram) e exclusão
+de aula, e também fechar/reabrir período e marcar/desfazer pagamento, gera um
+registro com autor, professor, quinzena e hora. Ações recusadas (por exemplo,
+período fechado) não geram registro. Se a gravação do histórico falhar, a ação
+do usuário continua válida e o erro vai para o log do servidor. A tabela
+`AuditLog` não tem chaves estrangeiras, então os registros sobrevivem à
+remoção de usuários e aulas.
+
+Endpoint (só `OWNER`): `GET /audit`, com filtros opcionais `periodStart`
+(início da quinzena, `YYYY-MM-DD`) e `professorId`, e paginação por cursor
+(`limit` de 1 a 100, padrão 30, e `cursor`). No app, fica em **Histórico**
+(link no Fechamento geral).
+
 ## Deploy
 
 - **Backend**: Render (Web Service, Docker), a partir do
@@ -184,18 +215,23 @@ Endpoints (todos só para `OWNER`): `POST /closing/periods` (`{ "start":
 > aplicar antes, pois a versão antiga da API simplesmente as ignora. Na ordem
 > inversa, a API nova consultaria tabelas que ainda não existem e daria erro.
 
+Depois de puxar mudanças que alteram o `schema.prisma`, rode
+`npx prisma generate` na pasta `backend` (o build do Docker já faz isso
+sozinho) para atualizar os tipos no editor.
+
 Migrations em produção são aplicadas manualmente (`npx prisma migrate
 deploy`), nunca automaticamente no boot da aplicação — para que alguém
 sempre revise a migration antes dela rodar contra o banco real.
 
 ## CI
 
-Dois workflows no GitHub Actions, disparados em pushes/PRs que tocam cada
-pasta:
+Três workflows no GitHub Actions. Os dois primeiros disparam em pushes/PRs
+que tocam cada pasta; o terceiro é o backup semanal descrito acima:
 
 - `backend-ci.yml`: Prisma generate + migrate, type-check, testes
   unitários e E2E, build, `npm audit`, build da imagem Docker.
 - `frontend-ci.yml`: type-check, build.
+- `db-backup.yml`: `pg_dump` semanal do banco de produção.
 
 ## Licença
 
